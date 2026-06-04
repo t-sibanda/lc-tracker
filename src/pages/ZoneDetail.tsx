@@ -3,10 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '@/context/AppContext';
 import {
   ArrowLeft, Pencil, Save, X, QrCode, TrendingUp,
-  CheckCircle2, PlayCircle, Circle, Camera, HardHat, Wrench
+  CheckCircle2, PlayCircle, Circle, Camera, HardHat, Wrench,
+  Download
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import CameraCapture from '@/components/CameraCapture';
+import * as XLSX from 'xlsx';
 import type { Task } from '@/types';
 
 const statusColors: Record<string, string> = {
@@ -18,7 +20,7 @@ const systems = ['Liquid Cooling', 'HVAC', 'PLC', 'SCADA'];
 export default function ZoneDetail() {
   const { zoneName } = useParams<{ zoneName: string }>();
   const navigate = useNavigate();
-  const { tasks, updateTask } = useApp();
+  const { tasks, updateTask, project } = useApp();
   const [activeTab, setActiveTab] = useState<'pre-install' | 'commissioning'>('pre-install');
   const [activeSystem, setActiveSystem] = useState('Liquid Cooling');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -29,29 +31,35 @@ export default function ZoneDetail() {
 
   const decodedZone = decodeURIComponent(zoneName || '');
 
-  // Pre-install tasks for this zone
-  const preInstallTasks = useMemo(() =>
-    tasks.filter(t => t.scope === 'pre-install' && t.zone === decodedZone && t.system === activeSystem),
-    [tasks, decodedZone, activeSystem]
-  );
+  // When tab changes, pick the first system that has tasks for the new scope
+  const handleTabChange = (tab: 'pre-install' | 'commissioning') => {
+    setActiveTab(tab);
+    const scope = tab === 'pre-install' ? 'pre-install' : 'zone';
+    // Find the first system with tasks for this scope in this zone
+    const sysWithTasks = systems.find(sys =>
+      tasks.some(t => t.scope === scope && t.zone === decodedZone && t.system === sys)
+    );
+    if (sysWithTasks) {
+      setActiveSystem(sysWithTasks);
+    } else {
+      setActiveSystem('Liquid Cooling'); // fallback
+    }
+    setEditingId(null);
+  };
 
-  // Commissioning tasks (L3/L4/L5) for this zone
-  const zoneTasks = useMemo(() =>
-    tasks.filter(t => t.scope === 'zone' && t.zone === decodedZone && t.system === activeSystem),
-    [tasks, decodedZone, activeSystem]
-  );
-
-  const currentTasks = activeTab === 'pre-install' ? preInstallTasks : zoneTasks;
+  // All tasks for this zone + scope + system
+  const currentTasks = useMemo(() => {
+    const scope = activeTab === 'pre-install' ? 'pre-install' : 'zone';
+    return tasks.filter(t => t.scope === scope && t.zone === decodedZone && t.system === activeSystem);
+  }, [tasks, activeTab, decodedZone, activeSystem]);
 
   // Overall zone progress (all non-project tasks)
   const allZoneTasks = tasks.filter(t => (t.scope === 'zone' || t.scope === 'pre-install') && t.zone === decodedZone);
   const allPct = allZoneTasks.length > 0 ? Math.round(allZoneTasks.reduce((s, t) => s + t.percentComplete, 0) / allZoneTasks.length) : 0;
 
-  // Pre-install progress
   const preInstallAll = tasks.filter(t => t.scope === 'pre-install' && t.zone === decodedZone);
   const preInstallPct = preInstallAll.length > 0 ? Math.round(preInstallAll.reduce((s, t) => s + t.percentComplete, 0) / preInstallAll.length) : 0;
 
-  // Commissioning progress
   const commAll = tasks.filter(t => t.scope === 'zone' && t.zone === decodedZone);
   const commPct = commAll.length > 0 ? Math.round(commAll.reduce((s, t) => s + t.percentComplete, 0) / commAll.length) : 0;
 
@@ -81,6 +89,41 @@ export default function ZoneDetail() {
     setShowCamera(true);
   }
 
+  function exportZoneExcel() {
+    // Export ALL tasks for this zone (both pre-install and commissioning), ALL systems
+    const zoneTasksAll = tasks.filter(t => (t.scope === 'zone' || t.scope === 'pre-install') && t.zone === decodedZone);
+
+    const rows = zoneTasksAll.map(t => ({
+      'Task ID': t.id,
+      'Description': t.description,
+      'Scope': t.scope,
+      'System': t.system,
+      'Discipline': t.discipline,
+      'Phase': t.phase,
+      'Owner': t.owner,
+      'Status': t.status,
+      'Percent Complete': t.percentComplete,
+      'Start Date': t.startDate,
+      'End Date': t.endDate,
+      'Notes': t.notes,
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 15 }, { wch: 50 }, { wch: 12 }, { wch: 15 },
+      { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 12 },
+      { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 30 },
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, decodedZone.replace(/\//g, '-'));
+
+    const fileName = `${project.number || 'LC-Tracker'}_${decodedZone.replace(/\s+/g, '_')}_Tasks_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -90,6 +133,9 @@ export default function ZoneDetail() {
         <h1 className="text-sm font-bold" style={{ color: '#f8fafc' }}>{decodedZone}</h1>
         <button onClick={() => setShowQR(!showQR)} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors ml-2">
           <QrCode size={14} style={{ color: '#22d3ee' }} />
+        </button>
+        <button onClick={exportZoneExcel} className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium ml-2" style={{ background: 'rgba(34,211,238,0.1)', color: '#22d3ee' }}>
+          <Download size={10} /> Export
         </button>
         <span className="text-[10px] px-2 py-0.5 rounded-full ml-auto" style={{ background: allPct === 100 ? 'rgba(16,185,129,0.15)' : 'rgba(34,211,238,0.1)', color: allPct === 100 ? '#10b981' : '#22d3ee' }}>
           {allPct}% Complete
@@ -133,7 +179,7 @@ export default function ZoneDetail() {
       {/* Tab Switcher */}
       <div className="flex gap-1">
         <button
-          onClick={() => setActiveTab('pre-install')}
+          onClick={() => handleTabChange('pre-install')}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium transition-colors"
           style={{
             background: activeTab === 'pre-install' ? 'rgba(245,158,11,0.15)' : 'rgba(51,65,85,0.2)',
@@ -144,7 +190,7 @@ export default function ZoneDetail() {
           <HardHat size={12} /> Pre-Install
         </button>
         <button
-          onClick={() => setActiveTab('commissioning')}
+          onClick={() => handleTabChange('commissioning')}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium transition-colors"
           style={{
             background: activeTab === 'commissioning' ? 'rgba(34,211,238,0.15)' : 'rgba(51,65,85,0.2)',
@@ -205,7 +251,6 @@ export default function ZoneDetail() {
         )}
       </div>
 
-      {/* Camera Modal */}
       {showCamera && cameraTarget && (
         <CameraCapture
           onClose={() => setShowCamera(false)}

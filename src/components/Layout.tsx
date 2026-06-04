@@ -1,8 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Wrench, Map, AlertTriangle, Zap,
-  ClipboardCheck, Users, FolderKanban, Database, Image,
-  Activity, Cloud, CloudOff, Package
+  ClipboardCheck, Users, FolderKanban, Database,
+  Activity, Cloud, CloudOff, Package, Image, FolderOpen, Cpu
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import ThemeToggle from './ThemeToggle';
@@ -16,6 +16,7 @@ const navItems = [
   { to: '/issues', icon: AlertTriangle, label: 'Issues' },
   { to: '/equipment', icon: Zap, label: 'Equipment' },
   { to: '/inventory', icon: Package, label: 'Inventory' },
+  { to: '/io-points', icon: Cpu, label: 'I/O Points' },
   { to: '/checklists', icon: ClipboardCheck, label: 'Checklists' },
   { to: '/media', icon: Image, label: 'Media' },
   { to: '/owners', icon: Users, label: 'Team' },
@@ -25,18 +26,39 @@ const navItems = [
 ];
 
 export default function Layout() {
-  const { cloudConnected, localOnly } = useApp();
+  const { projects, currentProjectId, switchProject, cloudConnected, localOnly } = useApp();
 
   return (
     <div className="min-h-screen" style={{ background: '#0b1120', color: '#e2e8f0' }}>
       <nav className="sticky top-0 z-40 border-b backdrop-blur-md" style={{ background: 'rgba(15,23,42,0.85)', borderColor: 'rgba(51,65,85,0.5)' }}>
         <div className="max-w-[1600px] mx-auto px-3 h-12 flex items-center gap-2">
-          <NavLink to="/" className="flex items-center gap-1.5 mr-3 shrink-0">
+          <NavLink to="/" className="flex items-center gap-1.5 mr-2 shrink-0">
             <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #0891b2, #22d3ee)' }}>
               <Zap size={14} style={{ color: '#0f172a' }} />
             </div>
             <span className="text-xs font-bold hidden sm:block gradient-text">LC Tracker</span>
           </NavLink>
+
+          {/* Project Selector */}
+          <div className="hidden md:flex items-center gap-1 mr-2">
+            <select
+              value={currentProjectId}
+              onChange={e => switchProject(e.target.value)}
+              className="text-[11px] px-2 py-1 rounded bg-transparent border-none outline-none cursor-pointer max-w-[200px] truncate"
+              style={{ color: '#22d3ee', background: 'rgba(34,211,238,0.08)' }}
+            >
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <NavLink
+              to="/projects"
+              className="p-1 rounded hover:bg-white/5 transition-colors"
+              title="Manage projects"
+            >
+              <FolderOpen size={12} style={{ color: '#64748b' }} />
+            </NavLink>
+          </div>
 
           <div className="flex-1 flex items-center gap-0.5 overflow-x-auto no-scrollbar">
             {navItems.map(item => (

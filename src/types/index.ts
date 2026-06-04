@@ -12,6 +12,18 @@ export interface Project {
   updatedAt: string;
 }
 
+export interface ProjectMeta {
+  id: string;
+  name: string;
+  number: string;
+  description: string;
+  client: string;
+  cxManager: string;
+  createdAt: string;
+  updatedAt: string;
+  taskCount: number;
+}
+
 export interface Task {
   id: string;
   description: string;
@@ -140,12 +152,15 @@ export interface RevisionSnapshot {
 
 export interface AppState {
   project: Project;
+  projects: ProjectMeta[];
+  currentProjectId: string;
   tasks: Task[];
   equipment: Equipment[];
   issues: Issue[];
   checklists: Checklist[];
   photos: Photo[];
   inventory: InventoryItem[];
+  ioPoints: IOPoint[];
   owners: Owner[];
   phases: Phase[];
   activity: ActivityEntry[];
@@ -192,3 +207,45 @@ export interface ZoneSummary {
 }
 
 export type ViewMode = 'project' | 'zone' | 'all';
+
+export interface TestStep {
+  id: string;
+  action: string;
+  expectedResult: string;
+  verified: boolean;
+  actualReading: string;
+  notes: string;
+}
+
+export interface IOPoint {
+  id: string;
+  panel: string;
+  description: string;
+  ioType: 'AI' | 'AO' | 'DI' | 'DO';
+  aiCount: number;
+  aoCount: number;
+  diCount: number;
+  doCount: number;
+  signalType: string;
+  signal: string;
+  instrumentPower: string;
+  plc: string;
+  ioModule: string;
+  rack: number;
+  slot: number;
+  channel: number;
+  ioAddress: string;
+  engMin: string;
+  engMax: string;
+  units: string;
+  zone: string;
+  system: string;
+  deviceInstalled: boolean;
+  wiringTagged: boolean;
+  devicePowered: boolean;
+  signalVerified: boolean;
+  passFail: 'Pass' | 'Fail' | 'Pending';
+  notes: string;
+  testSteps: TestStep[];
+  updatedAt: string;
+}

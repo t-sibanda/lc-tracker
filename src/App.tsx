@@ -14,6 +14,9 @@ import ActivityPage from '@/pages/ActivityPage';
 import MediaGallery from '@/pages/MediaGallery';
 import InventoryPage from '@/pages/InventoryPage';
 import DataPage from '@/pages/DataPage';
+import ProjectsPage from '@/pages/ProjectsPage';
+import IOPoints from '@/pages/IOPoints';
+import IOImport from '@/pages/IOImport';
 
 function App() {
   return (
@@ -34,6 +37,9 @@ function App() {
             <Route path="/media" element={<MediaGallery />} />
             <Route path="/inventory" element={<InventoryPage />} />
             <Route path="/data" element={<DataPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/io-points" element={<IOPoints />} />
+            <Route path="/io-import" element={<IOImport />} />
           </Route>
         </Routes>
       </HashRouter>
