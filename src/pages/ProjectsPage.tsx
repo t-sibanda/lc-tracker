@@ -1,13 +1,42 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/context/AppContext';
-import { FolderOpen, Plus, Trash2, ArrowRight, X } from 'lucide-react';
+import { FolderOpen, Plus, Trash2, ArrowRight, X, Pencil, Save } from 'lucide-react';
+import type { ProjectMeta } from '@/types';
 
 export default function ProjectsPage() {
-  const { projects, currentProjectId, switchProject, createProject, deleteProject } = useApp();
+  const { projects, currentProjectId, switchProject, createProject, deleteProject, updateProjectInfo } = useApp();
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', number: '', description: '', client: '', cxManager: '' });
+  const [editForm, setEditForm] = useState({ name: '', number: '', description: '', client: '', cxManager: '' });
+
+  function startEdit(p: ProjectMeta) {
+    setEditingId(p.id);
+    setEditForm({
+      name: p.name || '',
+      number: p.number || '',
+      description: p.description || '',
+      client: p.client || '',
+      cxManager: p.cxManager || '',
+    });
+  }
+
+  function handleSaveEdit() {
+    if (!editForm.name.trim()) return;
+    const isCurrent = editingId === currentProjectId;
+    if (isCurrent) {
+      updateProjectInfo({
+        name: editForm.name,
+        number: editForm.number,
+        description: editForm.description,
+        client: editForm.client,
+        cxManager: editForm.cxManager,
+      });
+    }
+    setEditingId(null);
+  }
 
   function handleCreate() {
     if (!form.name.trim()) return;
@@ -51,6 +80,29 @@ export default function ProjectsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {projects.map(p => {
           const isActive = p.id === currentProjectId;
+          const isEditing = editingId === p.id;
+
+          if (isEditing) {
+            return (
+              <div key={p.id} className="card p-3 space-y-2" style={{ border: '1px solid rgba(34,211,238,0.4)', background: 'rgba(34,211,238,0.05)' }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold" style={{ color: '#22d3ee' }}>Edit Project</span>
+                  <button onClick={() => setEditingId(null)}><X size={14} style={{ color: '#64748b' }} /></button>
+                </div>
+                <input className="input w-full px-2 py-1 text-xs rounded" placeholder="Project name *" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="input px-2 py-1 text-xs rounded" placeholder="Project number" value={editForm.number} onChange={e => setEditForm({ ...editForm, number: e.target.value })} />
+                  <input className="input px-2 py-1 text-xs rounded" placeholder="Client" value={editForm.client} onChange={e => setEditForm({ ...editForm, client: e.target.value })} />
+                </div>
+                <input className="input w-full px-2 py-1 text-xs rounded" placeholder="Cx Manager" value={editForm.cxManager} onChange={e => setEditForm({ ...editForm, cxManager: e.target.value })} />
+                <textarea className="input w-full px-2 py-1 text-xs rounded" placeholder="Description" rows={2} value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} />
+                <button onClick={handleSaveEdit} className="flex items-center gap-1 px-4 py-1.5 rounded text-[10px] font-medium" style={{ background: '#10b981', color: '#fff' }}>
+                  <Save size={10} /> Save Changes
+                </button>
+              </div>
+            );
+          }
+
           return (
             <button
               key={p.id}
@@ -83,6 +135,13 @@ export default function ProjectsPage() {
               <div className="flex items-center justify-between mt-2 pt-2" style={{ borderTop: '1px solid rgba(51,65,85,0.3)' }}>
                 <span className="text-[9px]" style={{ color: '#475569' }}>{p.taskCount} seeded tasks</span>
                 <div className="flex gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); startEdit(p); }}
+                    className="p-1 rounded hover:bg-cyan-500/10 transition-colors"
+                    title="Edit project"
+                  >
+                    <Pencil size={10} style={{ color: '#22d3ee' }} />
+                  </button>
                   {!isActive && (
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }}
