@@ -21,6 +21,7 @@ interface AppContextType extends AppState {
   createProject: (meta: Partial<ProjectMeta>) => string;
   deleteProject: (id: string) => void;
   updateProjectInfo: (p: Partial<Project>) => void;
+  updateProjectMeta: (id: string, meta: Partial<ProjectMeta>) => void;
   // Tasks
   addTask: (task: Omit<Task, 'id' | 'updatedAt'>) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
@@ -293,9 +294,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const updated = { ...prev.project, ...p, updatedAt: now() };
       return { ...prev, project: updated };
     });
-    setProjects(prev => prev.map(m => m.id === currentProjectId ? { ...m, name: p.name || m.name, number: p.number || m.number, updatedAt: now() } : m));
+    setProjects(prev => prev.map(m => m.id === currentProjectId ? { ...m, name: p.name || m.name, number: p.number || m.number, client: p.client || m.client, cxManager: p.cxManager || m.cxManager, description: p.description || m.description, updatedAt: now() } : m));
     logActivity({ action: 'update', entityType: 'project', entityId: currentProjectId, details: 'Updated project info', user: 'User' });
   }, [currentProjectId, logActivity]);
+
+  const updateProjectMeta = useCallback((id: string, meta: Partial<ProjectMeta>) => {
+    setProjects(prev => prev.map(m => m.id === id ? { ...m, ...meta, updatedAt: now() } : m));
+    logActivity({ action: 'update', entityType: 'project', entityId: id, details: 'Updated project details', user: 'User' });
+  }, [logActivity]);
 
   const takeSnapshot = useCallback((label: string) => {
     const snapshot: RevisionSnapshot = {
@@ -592,6 +598,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     createProject,
     deleteProject,
     updateProjectInfo,
+    updateProjectMeta,
     addTask, updateTask, deleteTask, addComment, deleteComment,
     addEquipment, updateEquipment, deleteEquipment,
     addIssue, updateIssue, deleteIssue,

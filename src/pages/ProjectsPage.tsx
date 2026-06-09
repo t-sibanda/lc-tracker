@@ -5,7 +5,7 @@ import { FolderOpen, Plus, Trash2, ArrowRight, X, Pencil, Save } from 'lucide-re
 import type { ProjectMeta } from '@/types';
 
 export default function ProjectsPage() {
-  const { projects, currentProjectId, switchProject, createProject, deleteProject, updateProjectInfo } = useApp();
+  const { projects, currentProjectId, switchProject, createProject, deleteProject, updateProjectInfo, updateProjectMeta } = useApp();
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -28,6 +28,14 @@ export default function ProjectsPage() {
     const isCurrent = editingId === currentProjectId;
     if (isCurrent) {
       updateProjectInfo({
+        name: editForm.name,
+        number: editForm.number,
+        description: editForm.description,
+        client: editForm.client,
+        cxManager: editForm.cxManager,
+      });
+    } else if (editingId) {
+      updateProjectMeta(editingId, {
         name: editForm.name,
         number: editForm.number,
         description: editForm.description,
