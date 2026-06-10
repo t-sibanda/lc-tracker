@@ -346,11 +346,32 @@ export const defaultIssues: Issue[] = [
 ];
 
 export const defaultChecklists: Checklist[] = [
-  { id: 'cl-001', title: 'CDU Receipt Inspection', type: 'Receipt Inspection', status: 'Complete', equipmentId: 'eq-001', equipmentName: 'CDU POD1-01', assignedTo: 'James Roach', percentComplete: 100, discipline: 'Mechanical', updatedAt: '2025-05-01T10:00:00Z' },
-  { id: 'cl-002', title: 'CDU Pre-Functional Check', type: 'Pre-Functional', status: 'In Progress', equipmentId: 'eq-001', equipmentName: 'CDU POD1-01', assignedTo: 'James Roach', percentComplete: 60, discipline: 'Mechanical', updatedAt: '2025-05-10T14:00:00Z' },
-  { id: 'cl-003', title: 'Panel Visual Inspection', type: 'Visual Inspection', status: 'Complete', equipmentId: 'eq-008', equipmentName: 'Control Panel POD1-01', assignedTo: 'Oleks Babich', percentComplete: 100, discipline: 'Controls', updatedAt: '2025-05-05T09:00:00Z' },
-  { id: 'cl-004', title: 'Network Cable Test', type: 'Test', status: 'In Progress', equipmentId: 'eq-007', equipmentName: 'Aparian Router POD1-01', assignedTo: 'Emon Kandahari', percentComplete: 40, discipline: 'Controls', updatedAt: '2025-05-12T11:00:00Z' },
-  { id: 'cl-005', title: 'Leak Detection Functional', type: 'Functional', status: 'Not Started', equipmentId: 'eq-005', equipmentName: 'Leak Detection Gateway POD1-01', assignedTo: 'James Roach', percentComplete: 0, discipline: 'Mechanical', updatedAt: '2025-05-20T08:00:00Z' },
+  { id: 'cl-001', title: 'CDU Receipt Inspection', type: 'Receipt Inspection', status: 'Complete', equipmentId: 'eq-001', equipmentName: 'CDU POD1-01', assignedTo: 'James Roach', percentComplete: 100, discipline: 'Mechanical', updatedAt: '2025-05-01T10:00:00Z', items: [
+    { id: 'cli-001', description: 'Verify equipment nameplate matches submittal.', expectedResult: 'Nameplate data matches approved submittal.', verified: true, actualReading: 'CDU-4000, SN: 2025-0041', notes: '' },
+    { id: 'cli-002', description: 'Inspect for physical damage during shipping.', expectedResult: 'No visible damage to equipment or packaging.', verified: true, actualReading: 'No damage observed', notes: '' },
+    { id: 'cli-003', description: 'Verify all accessories and loose parts are included.', expectedResult: 'All items on packing list are present.', verified: true, actualReading: 'Packing list verified complete', notes: '' },
+  ], documents: [] },
+  { id: 'cl-002', title: 'CDU Pre-Functional Check', type: 'Pre-Functional', status: 'In Progress', equipmentId: 'eq-001', equipmentName: 'CDU POD1-01', assignedTo: 'James Roach', percentComplete: 60, discipline: 'Mechanical', updatedAt: '2025-05-10T14:00:00Z', items: [
+    { id: 'cli-004', description: 'Verify equipment nameplate matches submittal.', expectedResult: 'Nameplate data matches approved submittal.', verified: true, actualReading: '', notes: '' },
+    { id: 'cli-005', description: 'Inspect for physical damage during shipping.', expectedResult: 'No visible damage to equipment or packaging.', verified: true, actualReading: '', notes: '' },
+    { id: 'cli-006', description: 'Verify all accessories and loose parts are included.', expectedResult: 'All items on packing list are present.', verified: true, actualReading: '', notes: '' },
+    { id: 'cli-007', description: 'Check for proper equipment anchoring and leveling.', expectedResult: 'Equipment is properly anchored and level.', verified: false, actualReading: '', notes: '' },
+  ], documents: [] },
+  { id: 'cl-003', title: 'Panel Visual Inspection', type: 'Visual Inspection', status: 'Complete', equipmentId: 'eq-008', equipmentName: 'Control Panel POD1-01', assignedTo: 'Oleks Babich', percentComplete: 100, discipline: 'Controls', updatedAt: '2025-05-05T09:00:00Z', items: [
+    { id: 'cli-008', description: 'Inspect equipment for physical damage.', expectedResult: 'No visible damage.', verified: true, actualReading: '', notes: '' },
+    { id: 'cli-009', description: 'Verify labels and nameplates are legible.', expectedResult: 'All labels readable and accurate.', verified: true, actualReading: '', notes: '' },
+    { id: 'cli-010', description: 'Check piping/ductwork connections.', expectedResult: 'All connections secure and leak-free.', verified: true, actualReading: '', notes: '' },
+  ], documents: [] },
+  { id: 'cl-004', title: 'Network Cable Test', type: 'Test', status: 'In Progress', equipmentId: 'eq-007', equipmentName: 'Aparian Router POD1-01', assignedTo: 'Emon Kandahari', percentComplete: 40, discipline: 'Controls', updatedAt: '2025-05-12T11:00:00Z', items: [
+    { id: 'cli-011', description: 'Verify cable routing per drawings.', expectedResult: 'Cables routed per approved drawings.', verified: true, actualReading: '', notes: '' },
+    { id: 'cli-012', description: 'Verify cable labels match drawings.', expectedResult: 'All cable tags match drawing tags.', verified: false, actualReading: '', notes: '' },
+    { id: 'cli-013', description: 'Test continuity on all conductors.', expectedResult: 'All conductors pass continuity test.', verified: false, actualReading: '', notes: '' },
+  ], documents: [] },
+  { id: 'cl-005', title: 'Leak Detection Functional', type: 'Functional', status: 'Not Started', equipmentId: 'eq-005', equipmentName: 'Leak Detection Gateway POD1-01', assignedTo: 'James Roach', percentComplete: 0, discipline: 'Mechanical', updatedAt: '2025-05-20T08:00:00Z', items: [
+    { id: 'cli-014', description: 'Verify control power is properly connected.', expectedResult: 'Control power is on and stable.', verified: false, actualReading: '', notes: '' },
+    { id: 'cli-015', description: 'Test all local control functions.', expectedResult: 'All local controls operate correctly.', verified: false, actualReading: '', notes: '' },
+    { id: 'cli-016', description: 'Verify remote control signals are received.', expectedResult: 'Remote commands execute properly.', verified: false, actualReading: '', notes: '' },
+  ], documents: [] },
 ];
 
 // Pre-installation / Construction tasks per zone

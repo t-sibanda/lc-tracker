@@ -8,6 +8,7 @@ import { useApp } from '@/context/AppContext';
 import ThemeToggle from './ThemeToggle';
 import GlobalSearch from './GlobalSearch';
 import NotificationBell from './NotificationBell';
+import InstallPrompt, { InstallButton } from './InstallPrompt';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Overview' },
@@ -29,8 +30,8 @@ export default function Layout() {
   const { projects, currentProjectId, switchProject, cloudConnected, localOnly } = useApp();
 
   return (
-    <div className="min-h-screen" style={{ background: '#0b1120', color: '#e2e8f0' }}>
-      <nav className="sticky top-0 z-40 border-b backdrop-blur-md" style={{ background: 'rgba(15,23,42,0.85)', borderColor: 'rgba(51,65,85,0.5)' }}>
+    <div className="min-h-screen" style={{ background: 'var(--app-bg)', color: 'var(--app-text-secondary)' }}>
+      <nav className="sticky top-0 z-40 border-b backdrop-blur-md" style={{ background: 'var(--app-nav-bg)', borderColor: 'var(--app-border)' }}>
         <div className="max-w-[1600px] mx-auto px-3 h-12 flex items-center gap-2">
           <NavLink to="/" className="flex items-center gap-1.5 mr-2 shrink-0">
             <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #0891b2, #22d3ee)' }}>
@@ -45,7 +46,7 @@ export default function Layout() {
               value={currentProjectId}
               onChange={e => switchProject(e.target.value)}
               className="text-[11px] px-2 py-1 rounded bg-transparent border-none outline-none cursor-pointer max-w-[200px] truncate"
-              style={{ color: '#22d3ee', background: 'rgba(34,211,238,0.08)' }}
+              style={{ color: 'var(--app-accent)', background: 'var(--app-accent-bg)' }}
             >
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -56,7 +57,7 @@ export default function Layout() {
               className="p-1 rounded hover:bg-white/5 transition-colors"
               title="Manage projects"
             >
-              <FolderOpen size={12} style={{ color: '#64748b' }} />
+              <FolderOpen size={12} style={{ color: 'var(--app-text-dim)' }} />
             </NavLink>
           </div>
 
@@ -79,6 +80,7 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            <InstallButton />
             <GlobalSearch />
             <NotificationBell />
             <ThemeToggle />
@@ -99,6 +101,8 @@ export default function Layout() {
       <main className="max-w-[1600px] mx-auto px-3 py-4">
         <Outlet />
       </main>
+
+      <InstallPrompt />
     </div>
   );
 }

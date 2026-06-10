@@ -83,6 +83,15 @@ export interface Issue {
   updatedAt: string;
 }
 
+export interface ChecklistItem {
+  id: string;
+  description: string;
+  expectedResult: string;
+  verified: boolean;
+  actualReading: string;
+  notes: string;
+}
+
 export interface Checklist {
   id: string;
   title: string;
@@ -93,7 +102,18 @@ export interface Checklist {
   assignedTo: string;
   percentComplete: number;
   discipline: string;
+  items: ChecklistItem[];
+  documents: ChecklistDocument[];
   updatedAt: string;
+}
+
+export interface ChecklistDocument {
+  id: string;
+  name: string;
+  type: 'pdf' | 'image' | 'doc' | 'other';
+  url: string;
+  uploadedAt: string;
+  uploadedBy: string;
 }
 
 export interface Photo {
@@ -103,7 +123,7 @@ export interface Photo {
   zone: string;
   uploadedAt: string;
   uploadedBy: string;
-  entityType: 'task' | 'equipment' | 'issue' | 'inventory' | 'general';
+  entityType: 'task' | 'equipment' | 'issue' | 'checklist' | 'inventory' | 'general';
   entityId: string;
   entityName: string;
 }

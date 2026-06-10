@@ -37,11 +37,30 @@
     --chart-3: 38 92% 50%;
     --chart-4: 0 84% 60%;
     --chart-5: 262 83% 58%;
+
+    /* App semantic colors - dark mode defaults */
+    --app-bg: #0b1120;
+    --app-bg-card: #0f172a;
+    --app-bg-input: #1e293b;
+    --app-bg-elevated: #1e293b;
+    --app-border: rgba(51, 65, 85, 0.5);
+    --app-border-input: rgba(51, 65, 85, 0.6);
+    --app-text-primary: #f8fafc;
+    --app-text-secondary: #e2e8f0;
+    --app-text-muted: #94a3b8;
+    --app-text-dim: #64748b;
+    --app-text-disabled: #475569;
+    --app-accent: #22d3ee;
+    --app-accent-bg: rgba(34, 211, 238, 0.15);
+    --app-success: #10b981;
+    --app-warning: #f59e0b;
+    --app-danger: #ef4444;
+    --app-nav-bg: rgba(15, 23, 42, 0.85);
   }
 
   body {
-    background: #0b1120;
-    color: #e2e8f0;
+    background: var(--app-bg);
+    color: var(--app-text-secondary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -68,27 +87,32 @@
 
 @layer components {
   .card {
-    background: #0f172a;
-    border: 1px solid rgba(51, 65, 85, 0.5);
+    background: var(--app-bg-card);
+    border: 1px solid var(--app-border);
     border-radius: 0.5rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   }
 
   .input {
-    background: #1e293b;
-    border: 1px solid rgba(51, 65, 85, 0.6);
-    color: #e2e8f0;
+    background: var(--app-bg-input);
+    border: 1px solid var(--app-border-input);
+    color: var(--app-text-secondary);
     outline: none;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
 
   .input:focus {
-    border-color: #22d3ee;
+    border-color: var(--app-accent);
     box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.2);
   }
 
   .input::placeholder {
-    color: #475569;
+    color: var(--app-text-disabled);
+  }
+
+  .input option {
+    background: var(--app-bg-input);
+    color: var(--app-text-secondary);
   }
 
   .gradient-text {
@@ -106,32 +130,93 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  /* Install prompt animation */
+  @keyframes slideUp {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .install-prompt {
+    animation: slideUp 0.3s ease-out;
+  }
 }
 
-/* Light Mode */
-.light-mode body {
-  background: #f8fafc !important;
-  color: #0f172a !important;
-}
-
-.light-mode .card {
-  background: #ffffff !important;
-  border-color: rgba(203, 213, 225, 0.8) !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.light-mode .input {
-  background: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #0f172a !important;
-}
-
-.light-mode .input::placeholder {
-  color: #94a3b8;
+/* ─── Light Mode ──────────────────────────────────────────────── */
+.light-mode {
+  --app-bg: #f8fafc;
+  --app-bg-card: #ffffff;
+  --app-bg-input: #f1f5f9;
+  --app-bg-elevated: #e2e8f0;
+  --app-border: rgba(203, 213, 225, 0.8);
+  --app-border-input: #cbd5e1;
+  --app-text-primary: #0f172a;
+  --app-text-secondary: #1e293b;
+  --app-text-muted: #475569;
+  --app-text-dim: #64748b;
+  --app-text-disabled: #94a3b8;
+  --app-accent: #0891b2;
+  --app-accent-bg: rgba(8, 145, 178, 0.1);
+  --app-success: #059669;
+  --app-warning: #d97706;
+  --app-danger: #dc2626;
+  --app-nav-bg: rgba(248, 250, 252, 0.9);
 }
 
 .light-mode .gradient-text {
-  background: linear-gradient(135deg, #0891b2, #06b6d4) !important;
-  -webkit-background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
+  background: linear-gradient(135deg, #0891b2, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Override hardcoded dark text colors in light mode */
+.light-mode [style*="color: #f8fafc"] { color: #0f172a !important; }
+.light-mode [style*="color: #e2e8f0"] { color: #1e293b !important; }
+.light-mode [style*="color: #94a3b8"] { color: #475569 !important; }
+.light-mode [style*="color: #64748b"] { color: #64748b !important; }
+.light-mode [style*="color: #475569"] { color: #94a3b8 !important; }
+.light-mode [style*="color:#f8fafc"] { color: #0f172a !important; }
+.light-mode [style*="color:#e2e8f0"] { color: #1e293b !important; }
+.light-mode [style*="color:#94a3b8"] { color: #475569 !important; }
+.light-mode [style*="color:#64748b"] { color: #64748b !important; }
+.light-mode [style*="color:#475569"] { color: #94a3b8 !important; }
+
+/* Override hardcoded dark backgrounds in light mode */
+.light-mode [style*="background: #0f172a"] { background: #ffffff !important; }
+.light-mode [style*="background: #1e293b"] { background: #f1f5f9 !important; }
+.light-mode [style*="background:#0f172a"] { background: #ffffff !important; }
+.light-mode [style*="background:#1e293b"] { background: #f1f5f9 !important; }
+
+/* Keep accent/success/warning/danger colors functional in both modes */
+.light-mode [style*="background: #22d3ee"] { background: #0891b2 !important; }
+.light-mode [style*="background:#22d3ee"] { background: #0891b2 !important; }
+.light-mode [style*="color: #22d3ee"] { color: #0891b2 !important; }
+.light-mode [style*="color:#22d3ee"] { color: #0891b2 !important; }
+
+/* Progress bar backgrounds */
+.light-mode [style*="background: rgba(51, 65, 85, 0.5)"] { background: #e2e8f0 !important; }
+.light-mode [style*="background:rgba(51, 65, 85, 0.5)"] { background: #e2e8f0 !important; }
+
+/* Border overrides */
+.light-mode [style*="border-color: rgba(51, 65, 85, 0.5)"] { border-color: rgba(203, 213, 225, 0.8) !important; }
+
+/* Scrollbar in light mode */
+.light-mode * {
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+/* High contrast focus states */
+.input:focus-visible {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 1px;
+}
+
+/* Touch-friendly tap targets for mobile */
+@layer base {
+  @media (max-width: 640px) {
+    button, select, input[type="checkbox"] {
+      min-height: 36px;
+    }
+  }
 }

@@ -4,7 +4,7 @@ import { useApp } from '@/context/AppContext';
 
 interface CameraCaptureProps {
   onClose: () => void;
-  entityType: 'task' | 'equipment' | 'issue' | 'inventory' | 'general';
+  entityType: 'task' | 'equipment' | 'issue' | 'checklist' | 'inventory' | 'general';
   entityId: string;
   entityName: string;
   zone: string;
