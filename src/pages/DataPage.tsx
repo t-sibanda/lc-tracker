@@ -2,11 +2,128 @@ import { useState, useRef, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
   Database, Upload, Download, Trash2, AlertTriangle, FileText,
-  Check, Lock, History, Globe, Laptop
+  Check, Lock, History, Globe, Laptop, Eye, UploadCloud
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import type { Task } from '@/types';
 
 const PIN = '1234';
+
+// --- Excel Import Helpers ---
+
+/** Normalize a header string: lowercase, trim, remove special chars */
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().trim().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ');
+}
+
+/** Find the task/description column value from a row using flexible header matching */
+function getTaskDescription(row: Record<string, unknown>): string {
+  const descKeys = Object.keys(row).filter(k => {
+    const n = normalizeHeader(k);
+    return n === 'task' || n === 'tasks' || n === 'task name' || n === 'task description' ||
+      n === 'description' || n === 'desc' || n === 'name' || n === 'activity' || n === 'item';
+  });
+  for (const key of descKeys) {
+    const val = String(row[key] || '').trim();
+    if (val) return val;
+  }
+  return '';
+}
+
+/** Find the percentage complete value from a row using flexible header matching */
+function getPercentComplete(row: Record<string, unknown>): number | null {
+  const pctKeys = Object.keys(row).filter(k => {
+    const n = normalizeHeader(k);
+    return n === ' complete' || n === 'complete' || n === 'percent complete' ||
+      n === 'percentage complete' || n === 'percentcomplete' || n === 'percent' ||
+      n === 'progress' || n === 'pct' || n === 'pct complete' || n === 'done' ||
+      n === 'completion' || n.includes('complete') || n.includes('progress') || n.includes('percent');
+  });
+  for (const key of pctKeys) {
+    const raw = row[key];
+    if (raw === null || raw === undefined || raw === '') continue;
+    const num = Number(raw);
+    if (!isNaN(num)) return num;
+  }
+  return null;
+}
+
+/** Get optional field value from a row with flexible matching */
+function getOptionalField(row: Record<string, unknown>, ...candidates: string[]): string {
+  for (const candidate of candidates) {
+    const key = Object.keys(row).find(k => normalizeHeader(k) === normalizeHeader(candidate));
+    if (key && row[key]) return String(row[key]).trim();
+  }
+  return '';
+}
+
+/** Simple token-based fuzzy similarity score between 0 and 1 */
+function similarityScore(a: string, b: string): number {
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (na === nb) return 1;
+  if (na.includes(nb) || nb.includes(na)) return 0.9;
+
+  // Token overlap (Jaccard-like)
+  const tokensA = new Set(na.split(' ').filter(t => t.length > 1));
+  const tokensB = new Set(nb.split(' ').filter(t => t.length > 1));
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+  const intersection = [...tokensA].filter(t => tokensB.has(t)).length;
+  const union = new Set([...tokensA, ...tokensB]).size;
+  const jaccard = intersection / union;
+
+  // Levenshtein for short strings
+  if (na.length < 60 && nb.length < 60) {
+    const maxLen = Math.max(na.length, nb.length);
+    const dist = levenshtein(na, nb);
+    const levScore = 1 - dist / maxLen;
+    return Math.max(jaccard, levScore);
+  }
+
+  return jaccard;
+}
+
+/** Basic Levenshtein distance */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+const MATCH_THRESHOLD = 0.6; // Minimum similarity to consider a match
+
+interface PreviewRow {
+  excelDesc: string;
+  matchedTask: Task | null;
+  score: number;
+  newPercent: number | null;
+  currentPercent: number;
+}
+
+function findBestMatch(desc: string, tasks: Task[]): { task: Task | null; score: number } {
+  let bestTask: Task | null = null;
+  let bestScore = 0;
+  for (const t of tasks) {
+    const score = similarityScore(desc, t.description);
+    if (score > bestScore) {
+      bestScore = score;
+      bestTask = t;
+    }
+  }
+  return { task: bestScore >= MATCH_THRESHOLD ? bestTask : null, score: bestScore };
+}
 
 export default function DataPage() {
   const {
@@ -22,6 +139,9 @@ export default function DataPage() {
   const [activeTab, setActiveTab] = useState<'reports' | 'sync' | 'revisions' | 'import'>('reports');
   const [importMode, setImportMode] = useState<'update' | 'new'>('update');
   const [importResult, setImportResult] = useState<{ matched: number; unmatched: number } | null>(null);
+  const [previewData, setPreviewData] = useState<PreviewRow[] | null>(null);
+  const [parsedRows, setParsedRows] = useState<Record<string, unknown>[] | null>(null);
+  const [detectedHeaders, setDetectedHeaders] = useState<{ taskCol: string | null; pctCol: string | null } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function checkPin() {
@@ -77,72 +197,160 @@ export default function DataPage() {
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet);
 
-      if (importMode === 'new') {
-        // Import as new tasks
-        const newTasks: typeof tasks = [];
-        rows.forEach(row => {
-          const desc = String(row['Task'] || row['Description'] || '');
-          if (!desc) return;
-          const pct = Number(row['% Complete'] || row['percentComplete'] || row['percent'] || 0);
-          const normalizedPct = pct <= 1 ? Math.round(pct * 100) : pct;
-          // Check for duplicates
-          if (tasks.find(t => t.description.toLowerCase() === desc.toLowerCase())) return;
-          newTasks.push({
-            id: `imported-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            description: desc,
-            phase: String(row['Phase'] || 'Development'),
-            zone: String(row['Zone'] || 'All'),
-            system: String(row['System'] || 'Project'),
-            discipline: String(row['Discipline'] || 'Controls'),
-            scope: (String(row['Scope'] || 'project').toLowerCase() === 'zone' ? 'zone' : 'project') as Task['scope'],
-            owner: String(row['Owner'] || row['Primary Owner'] || ''),
-            support: String(row['Support'] || row['Secondary Owner'] || ''),
-            predecessors: String(row['Predecessors'] || row['Prerequisite'] || ''),
-            deliverable: String(row['Deliverable'] || ''),
-            notes: String(row['Notes'] || ''),
-            percentComplete: normalizedPct,
-            status: (normalizedPct === 100 ? 'Complete' : normalizedPct > 0 ? 'In Progress' : 'Not Started') as Task['status'],
-            startDate: String(row['Start Date'] || ''),
-            endDate: String(row['End Date'] || row['Need by Date'] || ''),
-            comments: [],
-            updatedAt: new Date().toISOString(),
-          });
-        });
-        importData({ tasks: [...tasks, ...newTasks] });
-        setImportResult({ matched: newTasks.length, unmatched: 0 });
-      } else {
-        // Update existing tasks by matching description
-        let matched = 0;
-        let unmatched = 0;
-        const updatedTasks = tasks.map(t => {
-          const row = rows.find(r => {
-            const desc = String(r['Task'] || r['Description'] || '');
-            return desc.toLowerCase() === t.description.toLowerCase() ||
-              desc.toLowerCase().includes(t.description.toLowerCase()) ||
-              t.description.toLowerCase().includes(desc.toLowerCase());
-          });
-          if (row) {
-            matched++;
-            const pct = Number(row['% Complete'] || row['percentComplete'] || row['percent'] || t.percentComplete);
-            const normalizedPct = pct <= 1 ? Math.round(pct * 100) : pct;
-            return {
-              ...t,
-              percentComplete: normalizedPct,
-              status: (normalizedPct === 100 ? 'Complete' : normalizedPct > 0 ? 'In Progress' : 'Not Started') as Task['status'],
-              owner: String(row['Owner'] || row['Primary Owner'] || t.owner),
-              updatedAt: new Date().toISOString(),
-            };
-          } else {
-            unmatched++;
-            return t;
-          }
-        });
-        importData({ tasks: updatedTasks });
-        setImportResult({ matched, unmatched });
+      if (rows.length === 0) {
+        setImportResult({ matched: 0, unmatched: 0 });
+        return;
       }
+
+      // Detect which columns were found
+      const sampleRow = rows[0];
+      const taskColKey = Object.keys(sampleRow).find(k => {
+        const n = normalizeHeader(k);
+        return n === 'task' || n === 'tasks' || n === 'task name' || n === 'task description' ||
+          n === 'description' || n === 'desc' || n === 'name' || n === 'activity' || n === 'item';
+      });
+      const pctColKey = Object.keys(sampleRow).find(k => {
+        const n = normalizeHeader(k);
+        return n === ' complete' || n === 'complete' || n === 'percent complete' ||
+          n === 'percentage complete' || n === 'percentcomplete' || n === 'percent' ||
+          n === 'progress' || n === 'pct' || n === 'pct complete' || n === 'done' ||
+          n === 'completion' || n.includes('complete') || n.includes('progress') || n.includes('percent');
+      });
+      setDetectedHeaders({ taskCol: taskColKey || null, pctCol: pctColKey || null });
+      setParsedRows(rows);
+
+      // Generate preview
+      if (importMode === 'update') {
+        const preview: PreviewRow[] = rows.map(row => {
+          const desc = getTaskDescription(row);
+          const pctRaw = getPercentComplete(row);
+          const pct = pctRaw !== null ? (pctRaw <= 1 && pctRaw > 0 ? Math.round(pctRaw * 100) : pctRaw) : null;
+          if (!desc) return { excelDesc: '(empty row)', matchedTask: null, score: 0, newPercent: pct, currentPercent: 0 };
+          const { task, score } = findBestMatch(desc, tasks);
+          return {
+            excelDesc: desc,
+            matchedTask: task,
+            score,
+            newPercent: pct,
+            currentPercent: task?.percentComplete ?? 0,
+          };
+        }).filter(r => r.excelDesc !== '(empty row)');
+        setPreviewData(preview);
+      } else {
+        // New import preview
+        const preview: PreviewRow[] = rows.map(row => {
+          const desc = getTaskDescription(row);
+          const pctRaw = getPercentComplete(row);
+          const pct = pctRaw !== null ? (pctRaw <= 1 && pctRaw > 0 ? Math.round(pctRaw * 100) : pctRaw) : null;
+          if (!desc) return { excelDesc: '(empty row)', matchedTask: null, score: 0, newPercent: pct, currentPercent: 0 };
+          // Check if already exists (would be skipped)
+          const { task, score } = findBestMatch(desc, tasks);
+          return {
+            excelDesc: desc,
+            matchedTask: score >= 0.85 ? task : null, // high threshold = duplicate
+            score,
+            newPercent: pct,
+            currentPercent: task?.percentComplete ?? 0,
+          };
+        }).filter(r => r.excelDesc !== '(empty row)');
+        setPreviewData(preview);
+      }
+
+      setImportResult(null);
     };
     reader.readAsArrayBuffer(file);
     if (fileRef.current) fileRef.current.value = '';
+  }
+
+  function confirmImport() {
+    if (!parsedRows || parsedRows.length === 0) return;
+
+    if (importMode === 'update') {
+      let matched = 0;
+      let unmatched = 0;
+      const updatedTasks = tasks.map(t => {
+        // Find best matching row for this task using fuzzy matching
+        let bestRow: Record<string, unknown> | null = null;
+        let bestScore = 0;
+        for (const row of parsedRows) {
+          const desc = getTaskDescription(row);
+          if (!desc) continue;
+          const score = similarityScore(desc, t.description);
+          if (score > bestScore) {
+            bestScore = score;
+            bestRow = row;
+          }
+        }
+
+        if (bestRow && bestScore >= MATCH_THRESHOLD) {
+          matched++;
+          const pctRaw = getPercentComplete(bestRow);
+          const pct = pctRaw !== null
+            ? (pctRaw <= 1 && pctRaw > 0 ? Math.round(pctRaw * 100) : pctRaw)
+            : t.percentComplete;
+          const normalizedPct = Math.max(0, Math.min(100, pct));
+          return {
+            ...t,
+            percentComplete: normalizedPct,
+            status: (normalizedPct === 100 ? 'Complete' : normalizedPct > 0 ? 'In Progress' : 'Not Started') as Task['status'],
+            owner: getOptionalField(bestRow, 'Owner', 'Primary Owner', 'Assigned To', 'Responsible') || t.owner,
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          unmatched++;
+          return t;
+        }
+      });
+      importData({ tasks: updatedTasks });
+      setImportResult({ matched, unmatched });
+    } else {
+      // Import as new tasks
+      const newTasks: typeof tasks = [];
+      parsedRows.forEach(row => {
+        const desc = getTaskDescription(row);
+        if (!desc) return;
+        const pctRaw = getPercentComplete(row);
+        const pct = pctRaw !== null ? (pctRaw <= 1 && pctRaw > 0 ? Math.round(pctRaw * 100) : pctRaw) : 0;
+        const normalizedPct = Math.max(0, Math.min(100, pct));
+        // Skip duplicates (fuzzy)
+        const { score } = findBestMatch(desc, tasks);
+        if (score >= 0.85) return;
+        newTasks.push({
+          id: `imported-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          description: desc,
+          phase: getOptionalField(row, 'Phase') || 'Development',
+          zone: getOptionalField(row, 'Zone') || 'All',
+          system: getOptionalField(row, 'System') || 'Project',
+          discipline: getOptionalField(row, 'Discipline') || 'Controls',
+          scope: (getOptionalField(row, 'Scope').toLowerCase() === 'zone' ? 'zone' : 'project') as Task['scope'],
+          owner: getOptionalField(row, 'Owner', 'Primary Owner', 'Assigned To') || '',
+          support: getOptionalField(row, 'Support', 'Secondary Owner') || '',
+          predecessors: getOptionalField(row, 'Predecessors', 'Prerequisite') || '',
+          deliverable: getOptionalField(row, 'Deliverable') || '',
+          notes: getOptionalField(row, 'Notes') || '',
+          percentComplete: normalizedPct,
+          status: (normalizedPct === 100 ? 'Complete' : normalizedPct > 0 ? 'In Progress' : 'Not Started') as Task['status'],
+          startDate: getOptionalField(row, 'Start Date') || '',
+          endDate: getOptionalField(row, 'End Date', 'Need by Date', 'Due Date') || '',
+          comments: [],
+          updatedAt: new Date().toISOString(),
+        });
+      });
+      importData({ tasks: [...tasks, ...newTasks] });
+      setImportResult({ matched: newTasks.length, unmatched: 0 });
+    }
+
+    // Clear preview
+    setPreviewData(null);
+    setParsedRows(null);
+    setDetectedHeaders(null);
+  }
+
+  function cancelImport() {
+    setPreviewData(null);
+    setParsedRows(null);
+    setDetectedHeaders(null);
+    setImportResult(null);
   }
 
   function generateStatusReport(): string {
@@ -335,28 +543,132 @@ export default function DataPage() {
         <div className="card p-4 space-y-3">
           <h3 className="text-xs font-bold" style={{ color: '#22d3ee' }}>Excel Import / Update</h3>
           <div className="flex gap-2">
-            <button onClick={() => { setImportMode('update'); setImportResult(null); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'update' ? 'rgba(34,211,238,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'update' ? '#22d3ee' : '#94a3b8' }}>Update Existing Tasks</button>
-            <button onClick={() => { setImportMode('new'); setImportResult(null); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'new' ? 'rgba(16,185,129,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'new' ? '#10b981' : '#94a3b8' }}>Import as New</button>
+            <button onClick={() => { setImportMode('update'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'update' ? 'rgba(34,211,238,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'update' ? '#22d3ee' : '#94a3b8' }}>Update Existing Tasks</button>
+            <button onClick={() => { setImportMode('new'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'new' ? 'rgba(16,185,129,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'new' ? '#10b981' : '#94a3b8' }}>Import as New</button>
           </div>
           <p className="text-[10px]" style={{ color: '#94a3b8' }}>
             {importMode === 'update'
-              ? 'Upload an Excel file with Task and % Complete columns. Matching tasks will be updated.'
-              : 'Upload an Excel file to create new tasks. Duplicates (by description) will be skipped.'}
+              ? 'Upload an Excel file — tasks are matched using fuzzy matching. Preview before applying.'
+              : 'Upload an Excel file to create new tasks. Near-duplicates will be skipped.'}
           </p>
           <input type="file" ref={fileRef} accept=".xlsx,.xls,.csv" onChange={handleFileImport} className="text-[11px]" style={{ color: '#94a3b8' }} />
+
+          {/* Detected Headers */}
+          {detectedHeaders && (
+            <div className="p-2 rounded text-[10px] space-y-0.5" style={{ background: 'rgba(51,65,85,0.4)' }}>
+              <p style={{ color: '#e2e8f0' }}><strong>Detected columns:</strong></p>
+              <p style={{ color: detectedHeaders.taskCol ? '#10b981' : '#ef4444' }}>
+                Task/Description: {detectedHeaders.taskCol ? `✓ "${detectedHeaders.taskCol}"` : '✗ Not found'}
+              </p>
+              <p style={{ color: detectedHeaders.pctCol ? '#10b981' : '#ef4444' }}>
+                % Complete: {detectedHeaders.pctCol ? `✓ "${detectedHeaders.pctCol}"` : '✗ Not found'}
+              </p>
+            </div>
+          )}
+
+          {/* Preview Table */}
+          {previewData && previewData.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Eye size={12} style={{ color: '#f59e0b' }} />
+                <span className="text-[11px] font-bold" style={{ color: '#f59e0b' }}>Preview ({previewData.length} rows)</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto rounded" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.5)' }}>
+                <table className="w-full text-[10px]">
+                  <thead>
+                    <tr style={{ background: 'rgba(51,65,85,0.5)' }}>
+                      <th className="text-left p-1.5" style={{ color: '#94a3b8' }}>Excel Row</th>
+                      {importMode === 'update' && <th className="text-left p-1.5" style={{ color: '#94a3b8' }}>Matched To</th>}
+                      <th className="text-center p-1.5" style={{ color: '#94a3b8' }}>Score</th>
+                      <th className="text-center p-1.5" style={{ color: '#94a3b8' }}>{importMode === 'update' ? 'Current → New %' : 'New %'}</th>
+                      <th className="text-center p-1.5" style={{ color: '#94a3b8' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.slice(0, 50).map((row, i) => {
+                      const isMatch = importMode === 'update' ? !!row.matchedTask : !row.matchedTask;
+                      const statusColor = importMode === 'update'
+                        ? (row.matchedTask ? '#10b981' : '#ef4444')
+                        : (row.matchedTask ? '#f59e0b' : '#10b981');
+                      const statusText = importMode === 'update'
+                        ? (row.matchedTask ? 'Will update' : 'No match')
+                        : (row.matchedTask ? 'Duplicate (skip)' : 'Will import');
+                      return (
+                        <tr key={i} style={{ borderTop: '1px solid rgba(51,65,85,0.3)', opacity: isMatch ? 1 : 0.6 }}>
+                          <td className="p-1.5" style={{ color: '#e2e8f0', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.excelDesc}>{row.excelDesc}</td>
+                          {importMode === 'update' && (
+                            <td className="p-1.5" style={{ color: '#94a3b8', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.matchedTask?.description || ''}>
+                              {row.matchedTask?.description || '—'}
+                            </td>
+                          )}
+                          <td className="text-center p-1.5" style={{ color: row.score >= 0.8 ? '#10b981' : row.score >= MATCH_THRESHOLD ? '#f59e0b' : '#ef4444' }}>
+                            {row.score > 0 ? `${Math.round(row.score * 100)}%` : '—'}
+                          </td>
+                          <td className="text-center p-1.5" style={{ color: '#e2e8f0' }}>
+                            {importMode === 'update'
+                              ? row.matchedTask ? `${row.currentPercent}% → ${row.newPercent ?? row.currentPercent}%` : '—'
+                              : `${row.newPercent ?? 0}%`}
+                          </td>
+                          <td className="text-center p-1.5" style={{ color: statusColor }}>{statusText}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {previewData.length > 50 && (
+                  <div className="p-2 text-center text-[10px]" style={{ color: '#64748b' }}>...and {previewData.length - 50} more rows</div>
+                )}
+              </div>
+
+              {/* Summary */}
+              <div className="p-2 rounded text-[10px]" style={{ background: 'rgba(34,211,238,0.05)' }}>
+                {importMode === 'update' ? (
+                  <p style={{ color: '#e2e8f0' }}>
+                    <strong>{previewData.filter(r => r.matchedTask).length}</strong> tasks will be updated,{' '}
+                    <strong>{previewData.filter(r => !r.matchedTask).length}</strong> rows had no match
+                  </p>
+                ) : (
+                  <p style={{ color: '#e2e8f0' }}>
+                    <strong>{previewData.filter(r => !r.matchedTask).length}</strong> new tasks will be imported,{' '}
+                    <strong>{previewData.filter(r => r.matchedTask).length}</strong> duplicates will be skipped
+                  </p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                <button onClick={confirmImport} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium" style={{ background: 'rgba(16,185,129,0.2)', color: '#10b981' }}>
+                  <UploadCloud size={12} /> Confirm Import
+                </button>
+                <button onClick={cancelImport} className="px-3 py-2 rounded-md text-[11px] font-medium" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* No preview but empty detection */}
+          {previewData && previewData.length === 0 && (
+            <div className="p-2 rounded" style={{ background: 'rgba(239,68,68,0.1)' }}>
+              <div className="text-[11px]" style={{ color: '#ef4444' }}>No valid rows found. Check that your file has a recognizable Task/Description column.</div>
+            </div>
+          )}
+
           {importResult && (
             <div className="p-2 rounded" style={{ background: 'rgba(16,185,129,0.1)' }}>
               <div className="flex items-center gap-1 text-[11px]" style={{ color: '#10b981' }}>
                 <Check size={12} /> {importMode === 'update' ? `Updated ${importResult.matched} tasks` : `Imported ${importResult.matched} tasks`}
               </div>
               {importResult.unmatched > 0 && (
-                <div className="text-[10px] mt-0.5" style={{ color: '#f59e0b' }}>{importResult.unmatched} rows had no match</div>
+                <div className="text-[10px] mt-0.5" style={{ color: '#f59e0b' }}>{importResult.unmatched} tasks had no matching row</div>
               )}
             </div>
           )}
           <div className="p-2 rounded text-[10px] space-y-0.5" style={{ background: 'rgba(51,65,85,0.3)', color: '#64748b' }}>
-            <p><strong>Required columns:</strong> Task (or Description), % Complete (or percentComplete)</p>
-            <p><strong>Optional:</strong> Phase, Zone, System, Owner, Status, Start Date, End Date, Notes</p>
+            <p><strong>Accepted column names (flexible, case-insensitive):</strong></p>
+            <p>Task: Task, Tasks, Task Name, Description, Activity, Item</p>
+            <p>Progress: % Complete, Percent Complete, Percentage Complete, Progress, Completion</p>
+            <p><strong>Optional:</strong> Phase, Zone, System, Owner, Discipline, Start Date, End Date, Notes</p>
           </div>
         </div>
       )}
@@ -401,5 +713,3 @@ function ExportBtn({ icon, label, onClick }: { icon: React.ReactNode; label: str
     </button>
   );
 }
-
-import type { Task } from '@/types';
