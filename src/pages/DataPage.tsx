@@ -152,11 +152,12 @@ export default function DataPage() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [activeTab, setActiveTab] = useState<'reports' | 'sync' | 'revisions' | 'import'>('reports');
-  const [importMode, setImportMode] = useState<'update' | 'new'>('update');
+  const [importMode, setImportMode] = useState<'update' | 'new' | 'zone-progress'>('update');
   const [importResult, setImportResult] = useState<{ matched: number; unmatched: number } | null>(null);
   const [previewData, setPreviewData] = useState<PreviewRow[] | null>(null);
   const [parsedRows, setParsedRows] = useState<Record<string, unknown>[] | null>(null);
   const [detectedHeaders, setDetectedHeaders] = useState<{ taskCol: string | null; pctCol: string | null } | null>(null);
+  const [zoneProgressPreview, setZoneProgressPreview] = useState<{ zone: string; excelPct: number; currentPct: number; taskCount: number; subsystems: { name: string; pct: number }[] }[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function checkPin() {
@@ -273,6 +274,99 @@ export default function DataPage() {
         setPreviewData(preview);
       }
 
+      // Zone Progress mode: parse POD sections from schedule
+      if (importMode === 'zone-progress') {
+        setPreviewData(null);
+        const zoneMap = new Map<string, { tasks: Record<string, unknown>[]; sectionPct: number | null }>();
+        let currentZone: string | null = null;
+
+        // Known zone/section patterns from the Comstock schedule
+        const zonePatterns = [
+          { pattern: /^POD\s?(\d+)$/i, zone: (m: RegExpMatchArray) => `POD ${m[1]}` },
+          { pattern: /^Visitor Lab/i, zone: () => 'Visitor Lab' },
+          { pattern: /^Hospital POD/i, zone: () => 'Hospital POD' },
+          { pattern: /^Bench Lab/i, zone: () => 'Bench Lab' },
+          { pattern: /^Machine Farm/i, zone: () => 'Machine Farm' },
+          { pattern: /^PLC System/i, zone: () => null }, // system-level, not a zone
+          { pattern: /^SCADA System/i, zone: () => null },
+        ];
+
+        rows.forEach(row => {
+          const desc = getTaskDescription(row);
+          if (!desc) return;
+
+          // Check if this row is a zone section header
+          for (const { pattern, zone: getZone } of zonePatterns) {
+            const match = desc.match(pattern);
+            if (match) {
+              const zoneName = getZone(match);
+              if (zoneName) {
+                currentZone = zoneName;
+                const pct = getPercentComplete(row);
+                if (!zoneMap.has(zoneName)) {
+                  zoneMap.set(zoneName, { tasks: [], sectionPct: pct });
+                } else {
+                  zoneMap.get(zoneName)!.sectionPct = pct;
+                }
+              }
+              return;
+            }
+          }
+
+          // If we have a current zone and this isn't a section header, it's a task in that zone
+          if (currentZone && zoneMap.has(currentZone)) {
+            zoneMap.get(currentZone)!.tasks.push(row);
+          }
+        });
+
+        // Build preview showing zone mappings
+        const zonePreview = [...zoneMap.entries()].map(([zone, data]) => {
+          // Calculate average % from the zone's tasks
+          const taskPcts = data.tasks.map(r => getPercentComplete(r)).filter((p): p is number => p !== null);
+          const avgPct = data.sectionPct ?? (taskPcts.length > 0 ? Math.round(taskPcts.reduce((s, p) => s + p, 0) / taskPcts.length) : 0);
+
+          // Find matching zone tasks in the app
+          const appZoneTasks = tasks.filter(t => {
+            const tz = t.zone.toLowerCase().replace(/\s+/g, '');
+            const ez = zone.toLowerCase().replace(/\s+/g, '');
+            return tz === ez || tz.includes(ez) || ez.includes(tz);
+          });
+          const currentPct = appZoneTasks.length > 0
+            ? Math.round(appZoneTasks.reduce((s, t) => s + t.percentComplete, 0) / appZoneTasks.length)
+            : 0;
+
+          // Extract subsystem progress from zone tasks
+          const subsystems: { name: string; pct: number }[] = [];
+          const subsystemGroups = new Map<string, number[]>();
+          data.tasks.forEach(r => {
+            const d = getTaskDescription(r);
+            const p = getPercentComplete(r);
+            if (!d || p === null) return;
+            // Categorize by subsystem keywords
+            if (d.toLowerCase().includes('dlr') || d.toLowerCase().includes('plc') || d.toLowerCase().includes('rio')) {
+              subsystemGroups.set('PLC/DLR', [...(subsystemGroups.get('PLC/DLR') || []), p]);
+            } else if (d.toLowerCase().includes('cdu') || d.toLowerCase().includes('canbus')) {
+              subsystemGroups.set('CDU', [...(subsystemGroups.get('CDU') || []), p]);
+            } else if (d.toLowerCase().includes('leak')) {
+              subsystemGroups.set('Leak Detection', [...(subsystemGroups.get('Leak Detection') || []), p]);
+            } else if (d.toLowerCase().includes('ev') || d.toLowerCase().includes('iso') || d.toLowerCase().includes('valve')) {
+              subsystemGroups.set('Valves/ISO', [...(subsystemGroups.get('Valves/ISO') || []), p]);
+            } else if (d.toLowerCase().includes('rpp') || d.toLowerCase().includes('power')) {
+              subsystemGroups.set('Power/RPP', [...(subsystemGroups.get('Power/RPP') || []), p]);
+            } else if (d.toLowerCase().includes('point to point') || d.toLowerCase().includes('testing') || d.toLowerCase().includes('l4') || d.toLowerCase().includes('l5')) {
+              subsystemGroups.set('Testing', [...(subsystemGroups.get('Testing') || []), p]);
+            }
+          });
+          subsystemGroups.forEach((pcts, name) => {
+            subsystems.push({ name, pct: Math.round(pcts.reduce((s, p) => s + p, 0) / pcts.length) });
+          });
+
+          return { zone, excelPct: avgPct, currentPct, taskCount: appZoneTasks.length, subsystems };
+        }).filter(z => z.taskCount > 0); // Only show zones that have matching app tasks
+
+        setZoneProgressPreview(zonePreview);
+      }
+
       setImportResult(null);
     };
     reader.readAsArrayBuffer(file);
@@ -370,6 +464,42 @@ export default function DataPage() {
     setParsedRows(null);
     setDetectedHeaders(null);
     setImportResult(null);
+    setZoneProgressPreview(null);
+  }
+
+  function confirmZoneProgress() {
+    if (!zoneProgressPreview) return;
+    let updated = 0;
+    const updatedTasks = tasks.map(t => {
+      // Find which zone preview entry matches this task
+      const zoneEntry = zoneProgressPreview.find(zp => {
+        const tz = t.zone.toLowerCase().replace(/\s+/g, '');
+        const ez = zp.zone.toLowerCase().replace(/\s+/g, '');
+        return tz === ez || tz.includes(ez) || ez.includes(tz);
+      });
+      if (!zoneEntry) return t;
+      // Only update zone-scoped tasks
+      if (t.scope !== 'zone' && t.scope !== 'pre-install') return t;
+      // Proportionally update: scale the task's progress toward the zone's Excel percentage
+      // If zone is 91% complete in Excel, and task is currently at 50%, bump it closer to 91%
+      // Strategy: set all zone tasks to the zone's Excel average if they're behind
+      const targetPct = zoneEntry.excelPct;
+      if (t.percentComplete < targetPct) {
+        updated++;
+        return {
+          ...t,
+          percentComplete: targetPct,
+          status: (targetPct === 100 ? 'Complete' : targetPct > 0 ? 'In Progress' : 'Not Started') as Task['status'],
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return t;
+    });
+    importData({ tasks: updatedTasks });
+    setImportResult({ matched: updated, unmatched: tasks.length - updated });
+    setZoneProgressPreview(null);
+    setParsedRows(null);
+    setDetectedHeaders(null);
   }
 
   function generateStatusReport(): string {
@@ -561,14 +691,17 @@ export default function DataPage() {
       {activeTab === 'import' && (
         <div className="card p-4 space-y-3">
           <h3 className="text-xs font-bold" style={{ color: '#22d3ee' }}>Excel Import / Update</h3>
-          <div className="flex gap-2">
-            <button onClick={() => { setImportMode('update'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'update' ? 'rgba(34,211,238,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'update' ? '#22d3ee' : '#94a3b8' }}>Update Existing Tasks</button>
+          <div className="flex gap-1 flex-wrap">
+            <button onClick={() => { setImportMode('update'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'update' ? 'rgba(34,211,238,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'update' ? '#22d3ee' : '#94a3b8' }}>Update Existing</button>
             <button onClick={() => { setImportMode('new'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'new' ? 'rgba(16,185,129,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'new' ? '#10b981' : '#94a3b8' }}>Import as New</button>
+            <button onClick={() => { setImportMode('zone-progress'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'zone-progress' ? 'rgba(168,85,247,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'zone-progress' ? '#a855f7' : '#94a3b8' }}>Update Zone Progress</button>
           </div>
           <p className="text-[10px]" style={{ color: '#94a3b8' }}>
             {importMode === 'update'
               ? 'Upload an Excel file — tasks are matched using fuzzy matching. Preview before applying.'
-              : 'Upload an Excel file to create new tasks. Near-duplicates will be skipped.'}
+              : importMode === 'new'
+              ? 'Upload an Excel file to create new tasks. Near-duplicates will be skipped.'
+              : 'Upload a schedule Excel (e.g. Comstock Schedule) — POD sections are matched to app zones and progress is updated.'}
           </p>
           <input type="file" ref={fileRef} accept=".xlsx,.xls,.csv" onChange={handleFileImport} className="text-[11px]" style={{ color: '#94a3b8' }} />
 
@@ -673,10 +806,64 @@ export default function DataPage() {
             </div>
           )}
 
+          {/* Zone Progress Preview */}
+          {zoneProgressPreview && zoneProgressPreview.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Eye size={12} style={{ color: '#a855f7' }} />
+                <span className="text-[11px] font-bold" style={{ color: '#a855f7' }}>Zone Progress Preview</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto rounded" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.5)' }}>
+                {zoneProgressPreview.map((zp, i) => (
+                  <div key={i} className="p-2" style={{ borderBottom: '1px solid rgba(51,65,85,0.3)' }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium" style={{ color: '#e2e8f0' }}>{zp.zone}</span>
+                      <span className="text-[10px]" style={{ color: '#94a3b8' }}>{zp.taskCount} app tasks</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px]" style={{ color: '#64748b' }}>Current: {zp.currentPct}%</span>
+                      <span className="text-[10px]" style={{ color: '#94a3b8' }}>→</span>
+                      <span className="text-[10px] font-medium" style={{ color: '#a855f7' }}>Excel: {zp.excelPct}%</span>
+                      {zp.excelPct > zp.currentPct && (
+                        <span className="text-[10px]" style={{ color: '#10b981' }}>+{zp.excelPct - zp.currentPct}%</span>
+                      )}
+                    </div>
+                    {zp.subsystems.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {zp.subsystems.map((ss, j) => (
+                          <span key={j} className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(51,65,85,0.4)', color: '#94a3b8' }}>
+                            {ss.name}: {ss.pct}%
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="p-2 rounded text-[10px]" style={{ background: 'rgba(168,85,247,0.05)', color: '#e2e8f0' }}>
+                Tasks below the Excel zone percentage will be bumped up to match. Tasks already above won't be reduced.
+              </div>
+              <div className="flex gap-2">
+                <button onClick={confirmZoneProgress} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium" style={{ background: 'rgba(168,85,247,0.2)', color: '#a855f7' }}>
+                  <UploadCloud size={12} /> Apply Zone Progress
+                </button>
+                <button onClick={cancelImport} className="px-3 py-2 rounded-md text-[11px] font-medium" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {zoneProgressPreview && zoneProgressPreview.length === 0 && (
+            <div className="p-2 rounded" style={{ background: 'rgba(239,68,68,0.1)' }}>
+              <div className="text-[11px]" style={{ color: '#ef4444' }}>No zone matches found. Make sure your app has tasks with zone names matching the Excel (POD 1, POD 2, etc.).</div>
+            </div>
+          )}
+
           {importResult && (
             <div className="p-2 rounded" style={{ background: 'rgba(16,185,129,0.1)' }}>
               <div className="flex items-center gap-1 text-[11px]" style={{ color: '#10b981' }}>
-                <Check size={12} /> {importMode === 'update' ? `Updated ${importResult.matched} tasks` : `Imported ${importResult.matched} tasks`}
+                <Check size={12} /> {importMode === 'zone-progress' ? `Updated ${importResult.matched} zone tasks` : importMode === 'update' ? `Updated ${importResult.matched} tasks` : `Imported ${importResult.matched} tasks`}
               </div>
               {importResult.unmatched > 0 && (
                 <div className="text-[10px] mt-0.5" style={{ color: '#f59e0b' }}>{importResult.unmatched} tasks had no matching row</div>
