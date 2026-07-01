@@ -42,7 +42,10 @@ function getPercentComplete(row: Record<string, unknown>): number | null {
   for (const key of pctKeys) {
     const raw = row[key];
     if (raw === null || raw === undefined || raw === '') continue;
-    const num = Number(raw);
+    // Handle "100%", "75%", etc. — strip the % sign and any whitespace
+    const cleaned = String(raw).replace(/[%\s]/g, '').trim();
+    if (cleaned === '') continue;
+    const num = Number(cleaned);
     if (!isNaN(num)) return num;
   }
   return null;
@@ -55,6 +58,18 @@ function getOptionalField(row: Record<string, unknown>, ...candidates: string[])
     if (key && row[key]) return String(row[key]).trim();
   }
   return '';
+}
+
+/** Check if a row looks like a section header rather than an actual task */
+function isSectionHeader(row: Record<string, unknown>, desc: string): boolean {
+  const duration = getOptionalField(row, 'Duration');
+  if (duration) {
+    const daysMatch = duration.match(/(\d+)d/);
+    if (daysMatch && parseInt(daysMatch[1]) > 40) return true;
+  }
+  const sectionPatterns = /^(POD\s?\d+|PLC System|SCADA System|Visitor Lab \d+.*|Hospital POD|Bench Lab|Machine Farm)$/i;
+  if (sectionPatterns.test(desc.trim())) return true;
+  return false;
 }
 
 /** Simple token-based fuzzy similarity score between 0 and 1 */
@@ -243,6 +258,8 @@ export default function DataPage() {
           const pctRaw = getPercentComplete(row);
           const pct = pctRaw !== null ? (pctRaw <= 1 && pctRaw > 0 ? Math.round(pctRaw * 100) : pctRaw) : null;
           if (!desc) return { excelDesc: '(empty row)', matchedTask: null, score: 0, newPercent: pct, currentPercent: 0 };
+          // Skip section headers
+          if (isSectionHeader(row, desc)) return { excelDesc: `[SECTION] ${desc}`, matchedTask: { description: 'Section header - will skip' } as Task, score: 1, newPercent: pct, currentPercent: 0 };
           // Check if already exists (would be skipped)
           const { task, score } = findBestMatch(desc, tasks);
           return {
@@ -309,6 +326,8 @@ export default function DataPage() {
       parsedRows.forEach(row => {
         const desc = getTaskDescription(row);
         if (!desc) return;
+        // Skip section headers
+        if (isSectionHeader(row, desc)) return;
         const pctRaw = getPercentComplete(row);
         const pct = pctRaw !== null ? (pctRaw <= 1 && pctRaw > 0 ? Math.round(pctRaw * 100) : pctRaw) : 0;
         const normalizedPct = Math.max(0, Math.min(100, pct));
@@ -324,7 +343,7 @@ export default function DataPage() {
           discipline: getOptionalField(row, 'Discipline') || 'Controls',
           scope: (getOptionalField(row, 'Scope').toLowerCase() === 'zone' ? 'zone' : 'project') as Task['scope'],
           owner: getOptionalField(row, 'Owner', 'Primary Owner', 'Assigned To') || '',
-          support: getOptionalField(row, 'Support', 'Secondary Owner') || '',
+          support: getOptionalField(row, 'Support', 'Secondary Owner', 'Assigned Resource') || '',
           predecessors: getOptionalField(row, 'Predecessors', 'Prerequisite') || '',
           deliverable: getOptionalField(row, 'Deliverable') || '',
           notes: getOptionalField(row, 'Notes') || '',
