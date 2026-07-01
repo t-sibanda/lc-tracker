@@ -17,6 +17,7 @@ import DataPage from '@/pages/DataPage';
 import ProjectsPage from '@/pages/ProjectsPage';
 import IOPoints from '@/pages/IOPoints';
 import IOImport from '@/pages/IOImport';
+import SchedulePage from '@/pages/SchedulePage';
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/io-points" element={<IOPoints />} />
             <Route path="/io-import" element={<IOImport />} />
+            <Route path="/schedule" element={<SchedulePage />} />
           </Route>
         </Routes>
       </HashRouter>

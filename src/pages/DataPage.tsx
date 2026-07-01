@@ -140,6 +140,112 @@ function findBestMatch(desc: string, tasks: Task[]): { task: Task | null; score:
   return { task: bestScore >= MATCH_THRESHOLD ? bestTask : null, score: bestScore };
 }
 
+// --- Schedule-to-Task Mapping Rules ---
+// Maps Excel schedule task keywords to app task patterns (system + test level)
+interface MappingRule {
+  /** Keywords that must appear in the Excel task description (case-insensitive, all must match) */
+  excelKeywords: string[];
+  /** App task patterns to match against (any match counts) */
+  appPatterns: {
+    /** System in the app (e.g., 'Liquid Cooling', 'PLC', 'SCADA') */
+    system?: string;
+    /** Description substring match in app tasks */
+    descContains?: string[];
+    /** Task description prefix (e.g., 'L3-', 'L4-', 'PRE-') */
+    descPrefix?: string;
+    /** Scope filter */
+    scope?: 'zone' | 'pre-install' | 'project';
+  };
+}
+
+const SCHEDULE_TASK_MAPPINGS: MappingRule[] = [
+  // DLR/Network Testing → PLC L3 communication tasks
+  { excelKeywords: ['dlr', 'testing'], appPatterns: { system: 'PLC', descContains: ['communication', 'dlr', 'network'], descPrefix: 'L3-' } },
+  // Point to Point I/O Testing - ISOs → L3 ISO/valve-related tasks
+  { excelKeywords: ['point to point', 'iso'], appPatterns: { system: 'Liquid Cooling', descContains: ['valve', 'iso', 'actuator'], descPrefix: 'L3-' } },
+  // Point to Point I/O Testing - Environmental Sensors
+  { excelKeywords: ['point to point', 'environmental'], appPatterns: { system: 'Liquid Cooling', descContains: ['sensor', 'temperature', 'calibration', 'environmental'], descPrefix: 'L3-' } },
+  // Point to Point I/O Testing - RPPs
+  { excelKeywords: ['point to point', 'rpp'], appPatterns: { system: 'Liquid Cooling', descContains: ['power', 'rpp', 'supply'], descPrefix: 'L3-' } },
+  // Point to Point Leak Detection Testing
+  { excelKeywords: ['point to point', 'leak'], appPatterns: { system: 'Liquid Cooling', descContains: ['leak'], descPrefix: 'L3-' } },
+  // Point to Point Data Validation - CDUs
+  { excelKeywords: ['data validation', 'cdu'], appPatterns: { system: 'Liquid Cooling', descContains: ['flow', 'temperature', 'setpoint', 'control loop'], descPrefix: 'L3-' } },
+  // Point to Point Data Validation - EVs
+  { excelKeywords: ['data validation', 'ev'], appPatterns: { system: 'Liquid Cooling', descContains: ['valve', 'actuator'], descPrefix: 'L3-' } },
+  // Point to Point Data Validation - RPPs
+  { excelKeywords: ['data validation', 'rpp'], appPatterns: { system: 'Liquid Cooling', descContains: ['power', 'interlock'], descPrefix: 'L3-' } },
+  // L4 Functional Testing → all L4 tasks in that zone
+  { excelKeywords: ['l4', 'functional'], appPatterns: { descPrefix: 'L4-' } },
+  { excelKeywords: ['functional testing'], appPatterns: { descPrefix: 'L4-' } },
+  // L5 Witnessed Testing → all L5 tasks in that zone
+  { excelKeywords: ['l5', 'witnessed'], appPatterns: { descPrefix: 'L5-' } },
+  { excelKeywords: ['witnessed testing'], appPatterns: { descPrefix: 'L5-' } },
+  // Emulator Testing → L5 control transfer
+  { excelKeywords: ['emulator'], appPatterns: { descContains: ['control transfer', 'monitoring'], descPrefix: 'L5-' } },
+  // Control Panel Startup → L3 power/grounding/nameplate
+  { excelKeywords: ['control panel', 'startup'], appPatterns: { system: 'PLC', descContains: ['power', 'grounding', 'nameplate'], descPrefix: 'L3-' } },
+  // Configure CDUs → L3 communication/setpoint for Liquid Cooling
+  { excelKeywords: ['configure', 'cdu'], appPatterns: { system: 'Liquid Cooling', descContains: ['communication', 'setpoint', 'confirm'], descPrefix: 'L3-' } },
+  // Configure EVs → L3 valve/actuator tasks
+  { excelKeywords: ['configure', 'ev'], appPatterns: { system: 'Liquid Cooling', descContains: ['valve', 'actuator'], descPrefix: 'L3-' } },
+  // Configure Leak Gateway → L3 leak detection
+  { excelKeywords: ['configure', 'leak'], appPatterns: { system: 'Liquid Cooling', descContains: ['leak'], descPrefix: 'L3-' } },
+  // Configure Aparian → L3 alarm/interlock
+  { excelKeywords: ['configure', 'aparian'], appPatterns: { system: 'Liquid Cooling', descContains: ['alarm', 'interlock', 'safety'], descPrefix: 'L3-' } },
+  // Install conduit/wiring PRE tasks
+  { excelKeywords: ['install', 'conduit'], appPatterns: { descContains: ['conduit'], scope: 'pre-install' } },
+  { excelKeywords: ['pull', 'wire'], appPatterns: { descContains: ['cable', 'pull'], scope: 'pre-install' } },
+  { excelKeywords: ['pull', 'cable'], appPatterns: { descContains: ['cable', 'pull'], scope: 'pre-install' } },
+  { excelKeywords: ['terminate'], appPatterns: { descContains: ['terminate', 'cable'], scope: 'pre-install' } },
+  // PLC Failover → L4 failover
+  { excelKeywords: ['plc', 'failover'], appPatterns: { system: 'PLC', descContains: ['failover'], descPrefix: 'L4-' } },
+  // HMI Failover → SCADA failover
+  { excelKeywords: ['hmi', 'failover'], appPatterns: { system: 'SCADA', descContains: ['failover'], descPrefix: 'L4-' } },
+  // Training → project-level training task
+  { excelKeywords: ['training'], appPatterns: { descContains: ['training'], scope: 'project' } },
+  // Turnover to Operations → project closeout
+  { excelKeywords: ['turnover', 'operations'], appPatterns: { descContains: ['turnover', 'handover', 'closeout'], scope: 'project' } },
+];
+
+interface SmartMapPreviewRow {
+  excelTask: string;
+  excelZone: string;
+  excelPct: number;
+  mappedTasks: { id: string; description: string; currentPct: number }[];
+  rule: string;
+}
+
+/** Find app tasks that match a mapping rule within a specific zone */
+function findMappedTasks(rule: MappingRule, zone: string, allTasks: Task[]): Task[] {
+  return allTasks.filter(t => {
+    // Zone matching (flexible)
+    if (zone) {
+      const tz = t.zone.toLowerCase().replace(/\s+/g, '');
+      const ez = zone.toLowerCase().replace(/\s+/g, '');
+      if (!(tz === ez || tz.includes(ez) || ez.includes(tz))) return false;
+    }
+    // System matching
+    if (rule.appPatterns.system) {
+      if (!t.system.toLowerCase().includes(rule.appPatterns.system.toLowerCase())) return false;
+    }
+    // Scope matching
+    if (rule.appPatterns.scope) {
+      if (t.scope !== rule.appPatterns.scope) return false;
+    }
+    // Description prefix
+    if (rule.appPatterns.descPrefix) {
+      if (!t.description.toLowerCase().startsWith(rule.appPatterns.descPrefix.toLowerCase())) return false;
+    }
+    // Description contains any keyword
+    if (rule.appPatterns.descContains && rule.appPatterns.descContains.length > 0) {
+      const descLower = t.description.toLowerCase();
+      if (!rule.appPatterns.descContains.some(kw => descLower.includes(kw.toLowerCase()))) return false;
+    }
+    return true;
+  });
+}
+
 export default function DataPage() {
   const {
     tasks, equipment, issues, checklists, photos, project, revisions,
@@ -152,12 +258,13 @@ export default function DataPage() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [activeTab, setActiveTab] = useState<'reports' | 'sync' | 'revisions' | 'import'>('reports');
-  const [importMode, setImportMode] = useState<'update' | 'new' | 'zone-progress'>('update');
+  const [importMode, setImportMode] = useState<'update' | 'new' | 'zone-progress' | 'smart-map'>('update');
   const [importResult, setImportResult] = useState<{ matched: number; unmatched: number } | null>(null);
   const [previewData, setPreviewData] = useState<PreviewRow[] | null>(null);
   const [parsedRows, setParsedRows] = useState<Record<string, unknown>[] | null>(null);
   const [detectedHeaders, setDetectedHeaders] = useState<{ taskCol: string | null; pctCol: string | null } | null>(null);
   const [zoneProgressPreview, setZoneProgressPreview] = useState<{ zone: string; excelPct: number; currentPct: number; taskCount: number; subsystems: { name: string; pct: number }[] }[] | null>(null);
+  const [smartMapPreview, setSmartMapPreview] = useState<SmartMapPreviewRow[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   function checkPin() {
@@ -367,6 +474,60 @@ export default function DataPage() {
         setZoneProgressPreview(zonePreview);
       }
 
+      // Smart Map mode: use mapping rules to connect Excel tasks to app tasks
+      if (importMode === 'smart-map') {
+        setPreviewData(null);
+        setZoneProgressPreview(null);
+        let currentZone = '';
+        const zoneDetectors = [
+          { pattern: /^POD\s?(\d+)$/i, zone: (m: RegExpMatchArray) => `POD ${m[1]}` },
+          { pattern: /^Visitor Lab/i, zone: () => 'Visitor Lab' },
+          { pattern: /^Hospital POD/i, zone: () => 'Hospital POD' },
+          { pattern: /^Bench Lab/i, zone: () => 'Bench Lab' },
+          { pattern: /^Machine Farm/i, zone: () => 'Machine Farm' },
+        ];
+
+        const smartPreview: SmartMapPreviewRow[] = [];
+        rows.forEach(row => {
+          const desc = getTaskDescription(row);
+          if (!desc) return;
+
+          // Detect zone changes
+          for (const { pattern, zone: getZone } of zoneDetectors) {
+            const match = desc.match(pattern);
+            if (match) {
+              currentZone = getZone(match);
+              return;
+            }
+          }
+
+          // Skip section headers
+          if (isSectionHeader(row, desc)) return;
+
+          const pct = getPercentComplete(row) ?? 0;
+          const descLower = desc.toLowerCase();
+
+          // Try each mapping rule
+          for (const rule of SCHEDULE_TASK_MAPPINGS) {
+            const allKeywordsMatch = rule.excelKeywords.every(kw => descLower.includes(kw.toLowerCase()));
+            if (!allKeywordsMatch) continue;
+
+            const mapped = findMappedTasks(rule, currentZone, tasks);
+            if (mapped.length > 0) {
+              smartPreview.push({
+                excelTask: desc,
+                excelZone: currentZone,
+                excelPct: pct,
+                mappedTasks: mapped.map(t => ({ id: t.id, description: t.description, currentPct: t.percentComplete })),
+                rule: rule.excelKeywords.join(' + '),
+              });
+              break; // Use first matching rule
+            }
+          }
+        });
+        setSmartMapPreview(smartPreview);
+      }
+
       setImportResult(null);
     };
     reader.readAsArrayBuffer(file);
@@ -465,6 +626,7 @@ export default function DataPage() {
     setDetectedHeaders(null);
     setImportResult(null);
     setZoneProgressPreview(null);
+    setSmartMapPreview(null);
   }
 
   function confirmZoneProgress() {
@@ -498,6 +660,46 @@ export default function DataPage() {
     importData({ tasks: updatedTasks });
     setImportResult({ matched: updated, unmatched: tasks.length - updated });
     setZoneProgressPreview(null);
+    setParsedRows(null);
+    setDetectedHeaders(null);
+  }
+
+  function confirmSmartMap() {
+    if (!smartMapPreview || smartMapPreview.length === 0) return;
+    let updated = 0;
+    const taskUpdates = new Map<string, number>(); // taskId → new percentage
+
+    // Build the update map from all matched mappings
+    smartMapPreview.forEach(mapping => {
+      mapping.mappedTasks.forEach(mt => {
+        // Only update if Excel percentage is higher
+        if (mapping.excelPct > mt.currentPct) {
+          const existing = taskUpdates.get(mt.id);
+          // Keep the higher value if multiple mappings hit the same task
+          if (!existing || mapping.excelPct > existing) {
+            taskUpdates.set(mt.id, mapping.excelPct);
+          }
+        }
+      });
+    });
+
+    const updatedTasks = tasks.map(t => {
+      const newPct = taskUpdates.get(t.id);
+      if (newPct !== undefined) {
+        updated++;
+        return {
+          ...t,
+          percentComplete: newPct,
+          status: (newPct === 100 ? 'Complete' : newPct > 0 ? 'In Progress' : 'Not Started') as Task['status'],
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return t;
+    });
+
+    importData({ tasks: updatedTasks });
+    setImportResult({ matched: updated, unmatched: smartMapPreview.reduce((s, m) => s + m.mappedTasks.length, 0) - updated });
+    setSmartMapPreview(null);
     setParsedRows(null);
     setDetectedHeaders(null);
   }
@@ -694,14 +896,17 @@ export default function DataPage() {
           <div className="flex gap-1 flex-wrap">
             <button onClick={() => { setImportMode('update'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'update' ? 'rgba(34,211,238,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'update' ? '#22d3ee' : '#94a3b8' }}>Update Existing</button>
             <button onClick={() => { setImportMode('new'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'new' ? 'rgba(16,185,129,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'new' ? '#10b981' : '#94a3b8' }}>Import as New</button>
-            <button onClick={() => { setImportMode('zone-progress'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'zone-progress' ? 'rgba(168,85,247,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'zone-progress' ? '#a855f7' : '#94a3b8' }}>Update Zone Progress</button>
+            <button onClick={() => { setImportMode('zone-progress'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'zone-progress' ? 'rgba(168,85,247,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'zone-progress' ? '#a855f7' : '#94a3b8' }}>Zone Progress</button>
+            <button onClick={() => { setImportMode('smart-map'); setImportResult(null); cancelImport(); }} className="px-3 py-1.5 rounded text-[11px] font-medium transition-colors" style={{ background: importMode === 'smart-map' ? 'rgba(251,146,60,0.2)' : 'rgba(51,65,85,0.3)', color: importMode === 'smart-map' ? '#fb923c' : '#94a3b8' }}>Smart Map</button>
           </div>
           <p className="text-[10px]" style={{ color: '#94a3b8' }}>
             {importMode === 'update'
               ? 'Upload an Excel file — tasks are matched using fuzzy matching. Preview before applying.'
               : importMode === 'new'
               ? 'Upload an Excel file to create new tasks. Near-duplicates will be skipped.'
-              : 'Upload a schedule Excel (e.g. Comstock Schedule) — POD sections are matched to app zones and progress is updated.'}
+              : importMode === 'zone-progress'
+              ? 'Upload a schedule Excel — POD sections are matched to app zones and progress is updated.'
+              : 'Upload a schedule Excel — maps specific activities (DLR Testing, I/O Testing, etc.) to your L3/L4/L5 test procedures.'}
           </p>
           <input type="file" ref={fileRef} accept=".xlsx,.xls,.csv" onChange={handleFileImport} className="text-[11px]" style={{ color: '#94a3b8' }} />
 
@@ -860,10 +1065,62 @@ export default function DataPage() {
             </div>
           )}
 
+          {/* Smart Map Preview */}
+          {smartMapPreview && smartMapPreview.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Eye size={12} style={{ color: '#fb923c' }} />
+                <span className="text-[11px] font-bold" style={{ color: '#fb923c' }}>Smart Map Preview ({smartMapPreview.length} matches)</span>
+              </div>
+              <div className="max-h-72 overflow-y-auto rounded" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(51,65,85,0.5)' }}>
+                {smartMapPreview.map((mapping, i) => (
+                  <div key={i} className="p-2" style={{ borderBottom: '1px solid rgba(51,65,85,0.3)' }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium" style={{ color: '#e2e8f0' }}>{mapping.excelTask}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(251,146,60,0.15)', color: '#fb923c' }}>{mapping.excelPct}%</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[9px]" style={{ color: '#64748b' }}>{mapping.excelZone}</span>
+                      <span className="text-[9px]" style={{ color: '#64748b' }}>→ {mapping.mappedTasks.length} task{mapping.mappedTasks.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {mapping.mappedTasks.slice(0, 3).map((mt, j) => (
+                        <span key={j} className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(51,65,85,0.4)', color: mt.currentPct < mapping.excelPct ? '#10b981' : '#94a3b8' }}>
+                          {mt.description.substring(0, 35)}{mt.description.length > 35 ? '...' : ''} ({mt.currentPct}%)
+                        </span>
+                      ))}
+                      {mapping.mappedTasks.length > 3 && (
+                        <span className="text-[9px] px-1.5 py-0.5" style={{ color: '#64748b' }}>+{mapping.mappedTasks.length - 3} more</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="p-2 rounded text-[10px]" style={{ background: 'rgba(251,146,60,0.05)', color: '#e2e8f0' }}>
+                {smartMapPreview.reduce((s, m) => s + m.mappedTasks.filter(mt => mt.currentPct < m.excelPct).length, 0)} tasks will be updated.
+                Tasks already at or above the Excel percentage won't change.
+              </div>
+              <div className="flex gap-2">
+                <button onClick={confirmSmartMap} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium" style={{ background: 'rgba(251,146,60,0.2)', color: '#fb923c' }}>
+                  <UploadCloud size={12} /> Apply Smart Map
+                </button>
+                <button onClick={cancelImport} className="px-3 py-2 rounded-md text-[11px] font-medium" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {smartMapPreview && smartMapPreview.length === 0 && (
+            <div className="p-2 rounded" style={{ background: 'rgba(239,68,68,0.1)' }}>
+              <div className="text-[11px]" style={{ color: '#ef4444' }}>No mappings found. The Excel tasks didn't match any mapping rules, or no app tasks matched in the detected zones.</div>
+            </div>
+          )}
+
           {importResult && (
             <div className="p-2 rounded" style={{ background: 'rgba(16,185,129,0.1)' }}>
               <div className="flex items-center gap-1 text-[11px]" style={{ color: '#10b981' }}>
-                <Check size={12} /> {importMode === 'zone-progress' ? `Updated ${importResult.matched} zone tasks` : importMode === 'update' ? `Updated ${importResult.matched} tasks` : `Imported ${importResult.matched} tasks`}
+                <Check size={12} /> {importMode === 'smart-map' ? `Updated ${importResult.matched} tasks via smart mapping` : importMode === 'zone-progress' ? `Updated ${importResult.matched} zone tasks` : importMode === 'update' ? `Updated ${importResult.matched} tasks` : `Imported ${importResult.matched} tasks`}
               </div>
               {importResult.unmatched > 0 && (
                 <div className="text-[10px] mt-0.5" style={{ color: '#f59e0b' }}>{importResult.unmatched} tasks had no matching row</div>

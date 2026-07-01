@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Wrench, Map, AlertTriangle, Zap,
   ClipboardCheck, Users, FolderKanban, Database,
-  Activity, Cloud, CloudOff, Package, Image, FolderOpen, Cpu
+  Activity, Cloud, CloudOff, Package, Image, FolderOpen, Cpu, Calendar
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import ThemeToggle from './ThemeToggle';
@@ -23,6 +23,7 @@ const navItems = [
   { to: '/owners', icon: Users, label: 'Team' },
   { to: '/phases', icon: FolderKanban, label: 'Phases' },
   { to: '/activity', icon: Activity, label: 'Activity' },
+  { to: '/schedule', icon: Calendar, label: 'Schedule' },
   { to: '/data', icon: Database, label: 'Data' },
 ];
 
