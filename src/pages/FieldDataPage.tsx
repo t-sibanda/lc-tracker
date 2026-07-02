@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
-  Database, Cpu, Image, Activity, Upload, Download
+  Database, Cpu, Image, Activity, Upload
 } from 'lucide-react';
 import IOPoints from './IOPoints';
 import MediaGallery from './MediaGallery';

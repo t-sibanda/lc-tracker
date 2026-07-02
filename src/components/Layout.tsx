@@ -1,8 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import {
-  LayoutDashboard, Wrench, Map, AlertTriangle, Zap,
-  ClipboardCheck, Users, Database,
-  Activity, Cloud, CloudOff, Package, FolderOpen, Calendar,
+  LayoutDashboard, Map, AlertTriangle, Zap,
+  Users, Database,
+  Cloud, CloudOff, FolderOpen, Calendar,
   Briefcase, TestTubes
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';

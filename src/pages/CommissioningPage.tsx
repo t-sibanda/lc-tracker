@@ -1,18 +1,17 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
-  TestTubes, Search, ChevronDown, ChevronRight, CheckCircle2, PlayCircle, Circle,
-  ClipboardCheck, Plus, X, Trash2, Pencil
+  TestTubes, Search, ChevronDown, ChevronRight, CheckCircle2, PlayCircle, Circle
 } from 'lucide-react';
-import SidebarFilter from '@/components/SidebarFilter';
 
 const statusColors: Record<string, string> = { 'Complete': '#10b981', 'In Progress': '#f59e0b', 'Not Started': '#64748b' };
 
 export default function CommissioningPage() {
-  const { tasks, checklists, updateTask, deleteTask, addChecklist, updateChecklist, deleteChecklist } = useApp();
+  const { tasks, checklists, updateTask } = useApp();
   const [activeTab, setActiveTab] = useState<'tasks' | 'checklists'>('tasks');
   const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [filterZone, setFilterZone] = useState<string>('');
+  const [filterSystem, setFilterSystem] = useState<string>('');
   const [expandedZone, setExpandedZone] = useState<string | null>(null);
 
   // Only commissioning tasks (zone + pre-install scope)
@@ -27,12 +26,10 @@ export default function CommissioningPage() {
       const s = search.toLowerCase();
       result = result.filter(t => t.description.toLowerCase().includes(s) || t.zone.toLowerCase().includes(s) || t.system.toLowerCase().includes(s));
     }
-    if (filters['Zone']?.length) result = result.filter(t => filters['Zone'].includes(t.zone));
-    if (filters['System']?.length) result = result.filter(t => filters['System'].includes(t.system));
-    if (filters['Status']?.length) result = result.filter(t => filters['Status'].includes(t.status));
-    if (filters['Scope']?.length) result = result.filter(t => filters['Scope'].includes(t.scope));
+    if (filterZone) result = result.filter(t => t.zone === filterZone);
+    if (filterSystem) result = result.filter(t => t.system === filterSystem);
     return result;
-  }, [cxTasks, search, filters]);
+  }, [cxTasks, search, filterZone, filterSystem]);
 
   // Group by zone
   const tasksByZone = useMemo(() => {
@@ -69,7 +66,7 @@ export default function CommissioningPage() {
       {/* Zone Progress Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
         {zoneSummary.slice(0, 12).map(z => (
-          <button key={z.name} onClick={() => { setExpandedZone(expandedZone === z.name ? null : z.name); setFilters({ ...filters, Zone: [z.name] }); }} className="card p-2 text-center hover:bg-white/5 transition-colors">
+          <button key={z.name} onClick={() => { setExpandedZone(expandedZone === z.name ? null : z.name); setFilterZone(z.name); }} className="card p-2 text-center hover:bg-white/5 transition-colors">
             <div className="text-[9px] font-medium truncate" style={{ color: '#94a3b8' }}>{z.name}</div>
             <div className="text-sm font-bold" style={{ color: z.pct === 100 ? '#10b981' : z.pct > 0 ? '#a855f7' : '#64748b' }}>{z.pct}%</div>
             <div className="w-full h-1 rounded-full mt-1" style={{ background: 'rgba(51,65,85,0.5)' }}>
@@ -87,7 +84,7 @@ export default function CommissioningPage() {
         <button onClick={() => setActiveTab('checklists')} className="px-3 py-1.5 rounded text-[11px] font-medium" style={{ background: activeTab === 'checklists' ? 'rgba(168,85,247,0.15)' : 'rgba(51,65,85,0.2)', color: activeTab === 'checklists' ? '#a855f7' : '#94a3b8' }}>
           Checklists ({checklists.length})
         </button>
-        <button onClick={() => setFilters({})} className="ml-auto px-2 py-1 rounded text-[9px]" style={{ color: '#64748b' }}>Clear Filters</button>
+        <button onClick={() => { setFilterZone(''); setFilterSystem(''); }} className="ml-auto px-2 py-1 rounded text-[9px]" style={{ color: '#64748b' }}>Clear Filters</button>
       </div>
 
       {activeTab === 'tasks' && (
@@ -98,7 +95,14 @@ export default function CommissioningPage() {
               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: '#64748b' }} />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by task, zone, system..." className="input w-full pl-7 pr-3 py-1.5 text-[11px] rounded" />
             </div>
-            <SidebarFilter filters={filters} setFilters={setFilters} options={{ Zone: zones, System: systems, Status: ['Not Started', 'In Progress', 'Complete'], Scope: ['zone', 'pre-install'] }} />
+            <select value={filterZone} onChange={e => setFilterZone(e.target.value)} className="input px-2 py-1.5 text-[11px] rounded">
+              <option value="">All Zones</option>
+              {zones.map(z => <option key={z} value={z}>{z}</option>)}
+            </select>
+            <select value={filterSystem} onChange={e => setFilterSystem(e.target.value)} className="input px-2 py-1.5 text-[11px] rounded">
+              <option value="">All Systems</option>
+              {systems.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
 
           {/* Tasks grouped by zone */}

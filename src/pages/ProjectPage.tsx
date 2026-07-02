@@ -1,23 +1,21 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
-  Briefcase, Plus, Search, Pencil, Trash2, X, ChevronDown,
-  MessageSquare, Send, CheckCircle2, PlayCircle, Circle, Clock
+  Briefcase, Plus, Search, Trash2, ChevronDown,
+  MessageSquare, Send, CheckCircle2, PlayCircle, Circle
 } from 'lucide-react';
-import SidebarFilter from '@/components/SidebarFilter';
 
 const statusColors: Record<string, string> = { 'Complete': '#10b981', 'In Progress': '#f59e0b', 'Not Started': '#64748b' };
 const phaseOrder = ['Kickoff', 'Requirements', 'Design', 'Development', 'Test', 'Closeout'];
 
 export default function ProjectPage() {
-  const { tasks, phases, addTask, updateTask, deleteTask, addComment, deleteComment, addPhase, updatePhase, deletePhase } = useApp();
+  const { tasks, phases, addTask, updateTask, deleteTask, addComment, deleteComment } = useApp();
   const [activeTab, setActiveTab] = useState<'tasks' | 'phases'>('tasks');
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
-  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [filterPhase, setFilterPhase] = useState<string>('');
 
   // Only project-scope tasks
   const projectTasks = useMemo(() => tasks.filter(t => t.scope === 'project'), [tasks]);
@@ -28,11 +26,9 @@ export default function ProjectPage() {
       const s = search.toLowerCase();
       result = result.filter(t => t.description.toLowerCase().includes(s) || t.owner.toLowerCase().includes(s));
     }
-    if (filters['Phase']?.length) result = result.filter(t => filters['Phase'].includes(t.phase));
-    if (filters['Status']?.length) result = result.filter(t => filters['Status'].includes(t.status));
-    if (filters['Owner']?.length) result = result.filter(t => filters['Owner'].includes(t.owner));
+    if (filterPhase) result = result.filter(t => t.phase === filterPhase);
     return result;
-  }, [projectTasks, search, filters]);
+  }, [projectTasks, search, filterPhase]);
 
   // Phase progress calculated from tasks
   const phaseProgress = useMemo(() => {
@@ -96,7 +92,10 @@ export default function ProjectPage() {
               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: '#64748b' }} />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks..." className="input w-full pl-7 pr-3 py-1.5 text-[11px] rounded" />
             </div>
-            <SidebarFilter filters={filters} setFilters={setFilters} options={{ Phase: phaseOrder, Status: ['Not Started', 'In Progress', 'Complete'], Owner: [...new Set(projectTasks.map(t => t.owner).filter(Boolean))] }} />
+            <select value={filterPhase} onChange={e => setFilterPhase(e.target.value)} className="input px-2 py-1.5 text-[11px] rounded">
+              <option value="">All Phases</option>
+              {phaseOrder.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
           </div>
 
           {/* Add Form */}

@@ -1,11 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
-  Zap, Package, Search, Plus, Trash2, X, Pencil, ChevronDown, ChevronUp,
-  CheckCircle2, Truck, Circle, Camera
+  Zap, Search, Plus, CheckCircle2, Truck, Circle
 } from 'lucide-react';
-import SidebarFilter from '@/components/SidebarFilter';
-import CameraCapture from '@/components/CameraCapture';
 
 const eqStatusOrder = ['Not Commissioned', 'L1 - Documentation', 'L2 - Factory Witness', 'L3 - Startup', 'L4 - Functional', 'L5 - Integrated'];
 const eqStatusColors: Record<string, string> = {
@@ -18,15 +15,13 @@ const invStatusColors: Record<string, string> = {
 };
 
 export default function AssetsPage() {
-  const { equipment, inventory, addEquipment, updateEquipment, deleteEquipment, addInventoryItem, updateInventoryItem, deleteInventoryItem } = useApp();
+  const { equipment, inventory } = useApp();
   const [activeTab, setActiveTab] = useState<'equipment' | 'inventory'>('equipment');
   const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [filterStatus, setFilterStatus] = useState<string>('');
   const [showAdd, setShowAdd] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Equipment metrics
-  const eqPct = equipment.length > 0 ? Math.round(equipment.reduce((s, e) => s + e.percentComplete, 0) / equipment.length) : 0;
   const eqIntegrated = equipment.filter(e => e.status === 'L5 - Integrated').length;
 
   // Inventory metrics
@@ -39,10 +34,9 @@ export default function AssetsPage() {
       const s = search.toLowerCase();
       result = result.filter(e => e.name.toLowerCase().includes(s) || e.zone.toLowerCase().includes(s) || e.type.toLowerCase().includes(s));
     }
-    if (filters['Status']?.length) result = result.filter(e => filters['Status'].includes(e.status));
-    if (filters['Zone']?.length) result = result.filter(e => filters['Zone'].includes(e.zone));
+    if (filterStatus) result = result.filter(e => e.status === filterStatus);
     return result;
-  }, [equipment, search, filters]);
+  }, [equipment, search, filterStatus]);
 
   const filteredInventory = useMemo(() => {
     let result = inventory;
@@ -50,10 +44,9 @@ export default function AssetsPage() {
       const s = search.toLowerCase();
       result = result.filter(i => i.name.toLowerCase().includes(s) || i.zone.toLowerCase().includes(s));
     }
-    if (filters['Status']?.length) result = result.filter(i => filters['Status'].includes(i.status));
-    if (filters['Zone']?.length) result = result.filter(i => filters['Zone'].includes(i.zone));
+    if (filterStatus) result = result.filter(i => i.status === filterStatus);
     return result;
-  }, [inventory, search, filters]);
+  }, [inventory, search, filterStatus]);
 
   return (
     <div className="space-y-4">
@@ -89,10 +82,10 @@ export default function AssetsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1">
-        <button onClick={() => { setActiveTab('equipment'); setFilters({}); }} className="px-3 py-1.5 rounded text-[11px] font-medium" style={{ background: activeTab === 'equipment' ? 'rgba(34,211,238,0.15)' : 'rgba(51,65,85,0.2)', color: activeTab === 'equipment' ? '#22d3ee' : '#94a3b8' }}>
+        <button onClick={() => { setActiveTab('equipment'); setFilterStatus(''); }} className="px-3 py-1.5 rounded text-[11px] font-medium" style={{ background: activeTab === 'equipment' ? 'rgba(34,211,238,0.15)' : 'rgba(51,65,85,0.2)', color: activeTab === 'equipment' ? '#22d3ee' : '#94a3b8' }}>
           Equipment ({equipment.length})
         </button>
-        <button onClick={() => { setActiveTab('inventory'); setFilters({}); }} className="px-3 py-1.5 rounded text-[11px] font-medium" style={{ background: activeTab === 'inventory' ? 'rgba(168,85,247,0.15)' : 'rgba(51,65,85,0.2)', color: activeTab === 'inventory' ? '#a855f7' : '#94a3b8' }}>
+        <button onClick={() => { setActiveTab('inventory'); setFilterStatus(''); }} className="px-3 py-1.5 rounded text-[11px] font-medium" style={{ background: activeTab === 'inventory' ? 'rgba(168,85,247,0.15)' : 'rgba(51,65,85,0.2)', color: activeTab === 'inventory' ? '#a855f7' : '#94a3b8' }}>
           Inventory ({inventory.length})
         </button>
       </div>
@@ -103,10 +96,10 @@ export default function AssetsPage() {
           <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: '#64748b' }} />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${activeTab}...`} className="input w-full pl-7 pr-3 py-1.5 text-[11px] rounded" />
         </div>
-        <SidebarFilter filters={filters} setFilters={setFilters} options={{
-          Status: activeTab === 'equipment' ? eqStatusOrder : Object.keys(invStatusColors),
-          Zone: [...new Set((activeTab === 'equipment' ? equipment : inventory).map(i => 'zone' in i ? i.zone : '').filter(Boolean))],
-        }} />
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="input px-2 py-1.5 text-[11px] rounded">
+          <option value="">All Status</option>
+          {(activeTab === 'equipment' ? eqStatusOrder : Object.keys(invStatusColors)).map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
       {/* Equipment Tab */}
