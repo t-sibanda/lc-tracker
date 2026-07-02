@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
-  Briefcase, Plus, Search, Trash2, ChevronDown,
+  Briefcase, Plus, Search, Trash2, ChevronDown, X,
   MessageSquare, Send, CheckCircle2, PlayCircle, Circle
 } from 'lucide-react';
 
