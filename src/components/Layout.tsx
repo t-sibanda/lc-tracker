@@ -1,8 +1,9 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Wrench, Map, AlertTriangle, Zap,
-  ClipboardCheck, Users, FolderKanban, Database,
-  Activity, Cloud, CloudOff, Package, Image, FolderOpen, Cpu, Calendar
+  ClipboardCheck, Users, Database,
+  Activity, Cloud, CloudOff, Package, FolderOpen, Calendar,
+  Briefcase, TestTubes
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import ThemeToggle from './ThemeToggle';
@@ -12,19 +13,14 @@ import InstallPrompt, { InstallButton } from './InstallPrompt';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Overview' },
-  { to: '/tasks', icon: Wrench, label: 'Tasks' },
-  { to: '/zones', icon: Map, label: 'Zones' },
-  { to: '/issues', icon: AlertTriangle, label: 'Issues' },
-  { to: '/equipment', icon: Zap, label: 'Equipment' },
-  { to: '/inventory', icon: Package, label: 'Inventory' },
-  { to: '/io-points', icon: Cpu, label: 'I/O Points' },
-  { to: '/checklists', icon: ClipboardCheck, label: 'Checklists' },
-  { to: '/media', icon: Image, label: 'Media' },
-  { to: '/owners', icon: Users, label: 'Team' },
-  { to: '/phases', icon: FolderKanban, label: 'Phases' },
-  { to: '/activity', icon: Activity, label: 'Activity' },
+  { to: '/project', icon: Briefcase, label: 'Project' },
+  { to: '/commissioning', icon: TestTubes, label: 'Commissioning' },
   { to: '/schedule', icon: Calendar, label: 'Schedule' },
-  { to: '/data', icon: Database, label: 'Data' },
+  { to: '/zones', icon: Map, label: 'Zones' },
+  { to: '/assets', icon: Zap, label: 'Assets' },
+  { to: '/issues', icon: AlertTriangle, label: 'Issues' },
+  { to: '/field-data', icon: Database, label: 'Field Data' },
+  { to: '/team', icon: Users, label: 'Team' },
 ];
 
 export default function Layout() {
